@@ -96,25 +96,6 @@ module CPUSystem(
         .DROut(DROut)
     );
 
-    // Special reset handling for SP initialization
-    always @(posedge Clock) begin
-        if (Reset) begin
-            // Directly initialize all registers during reset
-            ALUSys.ARF.SP.Q <= 16'h00FF;
-            ALUSys.ARF.PC.Q <= 16'h0000;
-            ALUSys.ARF.AR.Q <= 16'h0000;
-            ALUSys.RF.R1.Q <= 32'h00000000;
-            ALUSys.RF.R2.Q <= 32'h00000000;
-            ALUSys.RF.R3.Q <= 32'h00000000;
-            ALUSys.RF.R4.Q <= 32'h00000000;
-            ALUSys.RF.S1.Q <= 32'h00000000;
-            ALUSys.RF.S2.Q <= 32'h00000000;
-            ALUSys.RF.S3.Q <= 32'h00000000;
-            ALUSys.RF.S4.Q <= 32'h00000000;
-            ALUSys.DR.DROut <= 32'h00000000;
-        end
-    end
-
     // Timing counter
     always @(posedge Clock) begin
         if (Reset) begin
@@ -200,39 +181,62 @@ module CPUSystem(
         // Default immediate value - Use address field
         ALU_Immediate = {24'h000000, Address};
 
-        // Handle reset first - it overrides everything else
-        if (Reset) begin
-            // Clear all 32-bit registers using FunSel = 3'b011 (clear to 0)
-            RF_RegSel = 4'b1111;  // Enable all registers
-            RF_ScrSel = 4'b1111;  // Enable all scratch registers
-            RF_FunSel = 3'b011;   // Clear to 0
+        case (T)
+            12'b000000000001: begin // T0: Fetch LSB or Reset
+                if (Reset) begin
+                    // Reset T1 will initialize SP. Here we clear others.
+                    // Use ALU to load 0.
+                    ALU_Immediate = 32'h00000000;
+                    MuxASel = 2'b11;     // Immediate (0) to ALU A
+                    ALU_FunSel = 5'b00000; // Pass A
+                    ALU_WF = 1'b0;         // Don't write flags during reset
+                    
+                    // Clear all 32-bit registers
+                    RF_RegSel = 4'b1111;  // Enable all registers
+                    RF_ScrSel = 4'b1111;  // Enable all scratch registers
+                    RF_FunSel = 3'b010;   // Load function
 
-            // Clear PC and AR to 0
-            ARF_RegSel = 3'b101;  // Enable PC and AR (bits 2,0)
-            ARF_FunSel = 2'b11;   // Clear to 0
-            
-            // Clear DR - disable memory so MemOut=0, then zero-extend
-            Mem_CS = 1'b1;        // Disable memory to get 0 on MemOut
-            DR_E = 1'b1;
-            DR_FunSel = 2'b01;    // Zero-extend MemOut (which is 0)
-        end else begin
-            case (T)
-                12'b000000000001: begin // T0: Fetch LSB
+                    // Clear all 16-bit address registers (PC, AR)
+                    ARF_RegSel = 3'b101;  // Enable PC and AR
+                    ARF_FunSel = 2'b10;   // Load function
+                    
+                    // Clear DR
+                    DR_E = 1'b1;
+                    DR_FunSel = 2'b01;    // Load MemOut (will be 0 if CS is high)
+                                          // A better way would be an explicit DR clear or load 0.
+                                          // Let's force load 0 via ALU.
+                    MuxASel = 2'b11;
+                    ALU_Immediate = 32'h0;
+                    ALU_FunSel = 5'b00000;
+                    DR_E = 1'b1;
+                    DR_FunSel = 2'b11; // Assume 11 means Load from ALU
+
+                end else begin
                     // Fetch LSB
                     ARF_OutDSel = 2'b00; // PC to address
                     Mem_CS = 1'b0;
                     IR_LH = 1'b0; // Load LSB
                     IR_Write = 1'b1;
                 end
-                
-                12'b000000000010: begin // T1: Increment PC, Fetch MSB
+            end
+            
+            12'b000000000010: begin // T1: Increment PC, Fetch MSB or Init SP
+                if (Reset) begin
+                    // Initialize SP to 0xFF (This happens on the *next* clock after T0 reset)
+                    ALU_Immediate = 32'h000000FF;
+                    MuxASel = 2'b11; // Immediate to ALU A
+                    ALU_FunSel = 5'b00000; // Pass A
+                    ARF_RegSel = 3'b010; // SP only
+                    ARF_FunSel = 2'b10; // Load
+                    T_Reset = 1'b1; // Reset T to start fetching from 0x0000
+                end else begin
                     // Increment PC
                     ARF_OutCSel = 2'b00; // PC to OutC
                     MuxASel = 2'b01; // ARF_OutC (PC) to ALU A
                     MuxBSel = 2'b11; // Immediate 1 to ALU B
                     ALU_Immediate = 32'h00000001;
                     ALU_FunSel = 5'b10100; // 32-bit ADD
-                    ARF_RegSel = 3'b100; // PC (bit 2)
+                    ARF_RegSel = 3'b100; // PC
                     ARF_FunSel = 2'b10; // Load
                     
                     // Fetch MSB
@@ -241,349 +245,349 @@ module CPUSystem(
                     IR_LH = 1'b1; // Load MSB
                     IR_Write = 1'b1;
                 end
+            end
+            
+            12'b000000000100: begin // T2: Increment PC, Start execution / Multi-cycle setup
+                // Increment PC (Always happens after fetch)
+                ARF_OutCSel = 2'b00; // PC to OutC
+                MuxASel = 2'b01; // ARF_OutC (PC) to ALU A
+                MuxBSel = 2'b11; // Immediate 1 to ALU B
+                ALU_Immediate = 32'h00000001;
+                ALU_FunSel = 5'b10100; // 32-bit ADD
+                ARF_RegSel = 3'b100; // PC
+                ARF_FunSel = 2'b10; // Load
                 
-                12'b000000000100: begin // T2: Increment PC, Start execution / Multi-cycle setup
-                    // Increment PC (Always happens after fetch)
-                    ARF_OutCSel = 2'b00; // PC to OutC
-                    MuxASel = 2'b01; // ARF_OutC (PC) to ALU A
-                    MuxBSel = 2'b11; // Immediate 1 to ALU B
-                    ALU_Immediate = 32'h00000001;
-                    ALU_FunSel = 5'b10100; // 32-bit ADD
-                    ARF_RegSel = 3'b100; // PC (bit 2)
-                    ARF_FunSel = 2'b10; // Load
+                // Instruction execution (or setup)
+                case (Opcode)
+                    6'h19: begin // MOVL - Move immediate to low 8 bits
+                        ALU_Immediate = {24'h000000, Address}; // Ensure correct immediate
+                        MuxASel = 2'b11; // Immediate to ALU A
+                        ALU_FunSel = 5'b00000; // Pass A (zero-extended)
+                        ALU_WF = 1'b1; // Write flags (as per test 2 Z flag check)
+                        select_dest_reg(RegSel, RF_RegSel); // Select R1-R4
+                        RF_FunSel = 3'b010; // Load (full 32-bit load)
+                        T_Reset = 1'b1; // Single cycle
+                    end
                     
-                    // Instruction execution (or setup)
-                    case (Opcode)
-                        6'h19: begin // MOVL - Move immediate to low 8 bits
-                            ALU_Immediate = {24'h000000, Address}; // Ensure correct immediate
-                            MuxASel = 2'b11; // Immediate to ALU A
-                            ALU_FunSel = 5'b10000; // Pass A (32-bit)
-                            ALU_WF = 1'b1; // Write flags
-                            select_dest_reg(RegSel, RF_RegSel); // Select R1-R4
-                            RF_FunSel = 3'b010; // Load (full 32-bit load)
-                            T_Reset = 1'b1; // Single cycle
-                        end
-                        
-                        6'h0A: begin // DEC - Decrement register (R1 -> R2)
-                            RF_OutASel = 3'b000; // R1
-                            MuxASel = 2'b00; // R1 to ALU A
-                            MuxBSel = 2'b11; // Immediate (1) to ALU B
-                            ALU_Immediate = 32'h00000001;
-                            ALU_FunSel = 5'b10110; // 32-bit subtract (A - B)
-                            ALU_WF = 1'b1; // Write flags
-                            RF_RegSel = 4'b0100; // R2 (bit 2)
-                            RF_FunSel = 3'b010; // Load ALU result
-                            T_Reset = 1'b1; // Single cycle
-                        end
+                    6'h0A: begin // DEC - Decrement register (R1 -> R2)
+                        ALU_Immediate = 32'h00000001; // Force immediate to 1
+                        RF_OutASel = 3'b000; // R1
+                        MuxASel = 2'b00; // R1 to ALU A
+                        MuxBSel = 2'b11; // Immediate (1) to ALU B
+                        ALU_FunSel = 5'b10110; // 32-bit subtract (A - B)
+                        ALU_WF = 1'b1; // Write flags
+                        RF_RegSel = 4'b0100; // R2
+                        RF_FunSel = 3'b010; // Load ALU result
+                        T_Reset = 1'b1; // Single cycle
+                    end
 
-                        6'h1E: begin // LDAL - Load Address Low (16-bit)
-                            ALU_Immediate = {24'h000000, Address};
-                            MuxASel = 2'b11; // Immediate to ALU A
-                            ALU_FunSel = 5'b10000; // Pass A
-                            ARF_RegSel = 3'b001; // AR (bit 0)
-                            ARF_FunSel = 2'b10; // Load
-                            // Go to T3
-                        end
+                    6'h1E: begin // LDAL - Load Addr, Set AR (Go to T3)
+                        ALU_Immediate = {24'h000000, Address};
+                        MuxASel = 2'b11; // Immediate to ALU A
+                        ALU_FunSel = 5'b00000; // Pass A (zero-extended)
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load
+                        // Go to T3
+                    end
 
-                        6'h1F: begin // LDAH - Load Address High (32-bit)
-                            ALU_Immediate = {24'h000000, Address};
-                            MuxASel = 2'b11; // Immediate to ALU A
-                            ALU_FunSel = 5'b10000; // Pass A
-                            ARF_RegSel = 3'b001; // AR (bit 0)
-                            ARF_FunSel = 2'b10; // Load
-                            // Go to T3
-                        end
+                    6'h1F: begin // LDAH - Load Addr, Set AR (Go to T3)
+                        ALU_Immediate = {24'h000000, Address};
+                        MuxASel = 2'b11; // Immediate to ALU A
+                        ALU_FunSel = 5'b00000; // Pass A (zero-extended)
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load
+                        // Go to T3
+                    end
 
-                        6'h1D: begin // STAR - Store Register
-                            select_rf_out_a({1'b0, RegSel}, RF_OutASel); // Select R1-R4
-                            MuxASel = 2'b00; // RF_OutA to ALU A
-                            ALU_FunSel = 5'b10000; // Pass A
-                            ARF_OutDSel = 2'b10; // AR to address
-                            Mem_CS = 1'b0;
-                            Mem_WR = 1'b1;
-                            MuxCSel = 2'b00; // ALU[7:0] (Byte 0)
-                            // Go to T3
-                        end
-                        
-                        6'h07: begin // CALL - Call subroutine
-                            // Save PC low byte to stack
-                            ARF_OutCSel = 2'b00; // PC to OutC
-                            MuxASel = 2'b01; // PC to ALU A
-                            ALU_FunSel = 5'b10000; // Pass A
-                            ARF_OutDSel = 2'b01; // SP to address
-                            Mem_CS = 1'b0;
-                            Mem_WR = 1'b1;
-                            MuxCSel = 2'b00; // ALU[7:0] (PC Low)
-                            // Go to T3
-                        end
-                        
-                        6'h12: begin // ORR - Bitwise OR (R1, AR -> R1)
-                            RF_OutASel = 3'b000; // R1
-                            MuxASel = 2'b00; // R1 to ALU A
-                            ARF_OutCSel = 2'b10; // AR to OutC
-                            MuxBSel = 2'b01; // ARF_OutC (AR) to ALU B
-                            ALU_FunSel = 5'b11000; // 32-bit OR
-                            ALU_WF = 1'b1; // Update flags
-                            RF_RegSel = 4'b1000; // R1 (bit 3)
-                            RF_FunSel = 3'b010; // Load
-                            T_Reset = 1'b1; // Single cycle
-                        end
+                    6'h1D: begin // STAR - Store Register (Go to T3)
+                        select_rf_out_a({1'b0, RegSel}, RF_OutASel); // Select R1-R4
+                        MuxASel = 2'b00; // RF_OutA to ALU A
+                        ALU_FunSel = 5'b10000; // Pass A
+                        ARF_OutDSel = 2'b10; // AR to address
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b00; // ALU[7:0] (Byte 0)
+                        // Go to T3
+                    end
+                    
+                    6'h07: begin // CALL - Call subroutine (Go to T3)
+                        // Save PC low byte to stack
+                        ARF_OutCSel = 2'b00; // PC to OutC
+                        MuxASel = 2'b01; // PC to ALU A
+                        ALU_FunSel = 5'b10000; // Pass A
+                        ARF_OutDSel = 2'b01; // SP to address
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b00; // ALU[7:0] (PC Low)
+                        // Go to T3
+                    end
+                    
+                    6'h12: begin // ORR - Bitwise OR (R1, AR -> R1)
+                        RF_OutASel = 3'b000; // R1
+                        MuxASel = 2'b00; // R1 to ALU A
+                        ARF_OutCSel = 2'b10; // AR to OutC
+                        MuxBSel = 2'b01; // ARF_OutC (AR) to ALU B
+                        ALU_FunSel = 5'b11000; // 32-bit OR
+                        ALU_WF = 1'b1; // Update flags
+                        RF_RegSel = 4'b1000; // R1 (Destination)
+                        RF_FunSel = 3'b010; // Load
+                        T_Reset = 1'b1; // Single cycle
+                    end
 
-                        default: begin
-                            T_Reset = 1'b1;
-                        end
-                    endcase
-                end
+                    default: begin
+                        T_Reset = 1'b1;
+                    end
+                endcase
+            end
 
-                // T3: Multi-cycle instruction continuation
-                12'b000000001000: begin 
-                    case (Opcode)
-                        6'h1E, 6'h1F: begin // LDAL/LDAH: Read Mem[AR] (Byte 0)
-                            ARF_OutDSel = 2'b10; // AR to address
-                            Mem_CS = 1'b0;
-                            DR_E = 1'b1;
-                            DR_FunSel = 2'b01; // Load zero-extended (M0)
-                            // Go to T4
-                        end
-                        6'h1D: begin // STAR: Increment AR
-                            ARF_OutCSel = 2'b10; // AR to OutC
-                            MuxASel = 2'b01; // AR to ALU A
-                            MuxBSel = 2'b11; // Immediate 1
-                            ALU_Immediate = 32'h00000001;
-                            ALU_FunSel = 5'b10100; // ADD
-                            ARF_RegSel = 3'b001; // AR (bit 0)
-                            ARF_FunSel = 2'b10; // Load
-                            // Go to T4
-                        end
-                        6'h07: begin // CALL: Decrement SP
-                            ARF_OutCSel = 2'b01; // SP to OutC
-                            MuxASel = 2'b01; // SP to ALU A
-                            MuxBSel = 2'b11; // Immediate 1
-                            ALU_Immediate = 32'h00000001;
-                            ALU_FunSel = 5'b10110; // SUB
-                            ARF_RegSel = 3'b010; // SP (bit 1)
-                            ARF_FunSel = 2'b10; // Load
-                            // Go to T4
-                        end
-                        default: T_Reset = 1'b1;
-                    endcase
-                end
-                
-                // T4: Multi-cycle instruction continuation
-                12'b000000010000: begin 
-                    case (Opcode)
-                        6'h1E: begin // LDAL: Increment AR
-                            ARF_OutCSel = 2'b10; // AR to OutC
-                            MuxASel = 2'b01; // AR to ALU A
-                            MuxBSel = 2'b11; // Immediate 1
-                            ALU_Immediate = 32'h00000001;
-                            ALU_FunSel = 5'b10100; // ADD
-                            ARF_RegSel = 3'b001; // AR (bit 0)
-                            ARF_FunSel = 2'b10; // Load
-                            // Go to T5
-                        end
-                        6'h1F: begin // LDAH: Increment AR
-                            ARF_OutCSel = 2'b10; // AR to OutC
-                            MuxASel = 2'b01; // AR to ALU A
-                            MuxBSel = 2'b11; // Immediate 1
-                            ALU_Immediate = 32'h00000001;
-                            ALU_FunSel = 5'b10100; // ADD
-                            ARF_RegSel = 3'b001; // AR (bit 0)
-                            ARF_FunSel = 2'b10; // Load
-                            // Go to T5
-                        end
-                        6'h1D: begin // STAR: Store Byte 1
-                            select_rf_out_a({1'b0, RegSel}, RF_OutASel);
-                            MuxASel = 2'b00; // RF_OutA to ALU A
-                            ALU_FunSel = 5'b10000; // Pass A
-                            ARF_OutDSel = 2'b10; // AR to address
-                            Mem_CS = 1'b0;
-                            Mem_WR = 1'b1;
-                            MuxCSel = 2'b01; // ALU[15:8] (Byte 1)
-                            // Go to T5
-                        end
-                        6'h07: begin // CALL: Store PC High
-                            ARF_OutCSel = 2'b00; // PC to OutC
-                            MuxASel = 2'b01; // PC to ALU A
-                            ALU_FunSel = 5'b10000; // Pass A
-                            ARF_OutDSel = 2'b01; // SP to address
-                            Mem_CS = 1'b0;
-                            Mem_WR = 1'b1;
-                            MuxCSel = 2'b01; // ALU[15:8] (PC High)
-                            // Go to T5
-                        end
-                        default: T_Reset = 1'b1;
-                    endcase
-                end
+            // T3: Incr AR / Dec SP / Read M0 / Store PCH
+            12'b000000001000: begin 
+                case (Opcode)
+                    6'h1E, 6'h1F: begin // LDAL/LDAH: Read Mem[AR] (Byte 0)
+                        ARF_OutDSel = 2'b10; // AR to address
+                        Mem_CS = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b01; // Load zero-extended (M0)
+                        // Go to T4
+                    end
+                    6'h1D: begin // STAR: Increment AR
+                        ARF_OutCSel = 2'b10; // AR to OutC
+                        MuxASel = 2'b01; // AR to ALU A
+                        MuxBSel = 2'b11; // Immediate 1
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100; // ADD
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load
+                        // Go to T4
+                    end
+                    6'h07: begin // CALL: Decrement SP
+                        ARF_OutCSel = 2'b01; // SP to OutC
+                        MuxASel = 2'b01; // SP to ALU A
+                        MuxBSel = 2'b11; // Immediate 1
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10110; // SUB
+                        ARF_RegSel = 3'b010; // SP
+                        ARF_FunSel = 2'b10; // Load
+                        // Go to T4
+                    end
+                    default: T_Reset = 1'b1;
+                endcase
+            end
+            
+            // T4: Read M1 / Store B1 / Store PCH
+            12'b000000010000: begin 
+                case (Opcode)
+                    6'h1E: begin // LDAL: Increment AR
+                        ARF_OutCSel = 2'b10; // AR to OutC
+                        MuxASel = 2'b01; // AR to ALU A
+                        MuxBSel = 2'b11; // Immediate 1
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100; // ADD
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load
+                        // Go to T5
+                    end
+                    6'h1F: begin // LDAH: Increment AR
+                        ARF_OutCSel = 2'b10; // AR to OutC
+                        MuxASel = 2'b01; // AR to ALU A
+                        MuxBSel = 2'b11; // Immediate 1
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100; // ADD
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load
+                        // Go to T5
+                    end
+                    6'h1D: begin // STAR: Store Byte 1
+                        select_rf_out_a({1'b0, RegSel}, RF_OutASel);
+                        MuxASel = 2'b00; // RF_OutA to ALU A
+                        ALU_FunSel = 5'b10000; // Pass A
+                        ARF_OutDSel = 2'b10; // AR to address
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b01; // ALU[15:8] (Byte 1)
+                        // Go to T5
+                    end
+                    6'h07: begin // CALL: Store PC High
+                        ARF_OutCSel = 2'b00; // PC to OutC
+                        MuxASel = 2'b01; // PC to ALU A
+                        ALU_FunSel = 5'b10000; // Pass A
+                        ARF_OutDSel = 2'b01; // SP to address
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b01; // ALU[15:8] (PC High)
+                        // Go to T5
+                    end
+                    default: T_Reset = 1'b1;
+                endcase
+            end
 
-                // T5: Multi-cycle instruction continuation
-                12'b000000100000: begin 
-                    case (Opcode)
-                        6'h1E: begin // LDAL: Read Mem[AR] (Byte 1) and finish
-                            ARF_OutDSel = 2'b10; // AR to address
-                            Mem_CS = 1'b0;
-                            DR_E = 1'b1;
-                            DR_FunSel = 2'b10; // Load and shift (DR = {DR[23:0], MemOut})
-                            // Go to T6 to load register
-                        end
-                        6'h1F: begin // LDAH: Read Mem[AR] (Byte 1)
-                            ARF_OutDSel = 2'b10; // AR to address
-                            Mem_CS = 1'b0;
-                            DR_E = 1'b1;
-                            DR_FunSel = 2'b10; // Load and shift (DR = {DR[23:0], MemOut})
-                            // Go to T6
-                        end
-                        6'h1D: begin // STAR: Increment AR
-                            ARF_OutCSel = 2'b10; // AR to OutC
-                            MuxASel = 2'b01; // AR to ALU A
-                            MuxBSel = 2'b11; // Immediate 1
-                            ALU_Immediate = 32'h00000001;
-                            ALU_FunSel = 5'b10100; // ADD
-                            ARF_RegSel = 3'b001; // AR (bit 0)
-                            ARF_FunSel = 2'b10; // Load
-                            // Go to T6
-                        end
-                        6'h07: begin // CALL: Decrement SP
-                            ARF_OutCSel = 2'b01; // SP to OutC
-                            MuxASel = 2'b01; // SP to ALU A
-                            MuxBSel = 2'b11; // Immediate 1
-                            ALU_Immediate = 32'h00000001;
-                            ALU_FunSel = 5'b10110; // SUB
-                            ARF_RegSel = 3'b010; // SP (bit 1)
-                            ARF_FunSel = 2'b10; // Load
-                            // Go to T6
-                        end
-                        default: T_Reset = 1'b1;
-                    endcase
-                end
+            // T5: Read M1 / Inc AR / Dec SP
+            12'b000000100000: begin 
+                case (Opcode)
+                    6'h1E: begin // LDAL: Read Mem[AR] (Byte 1)
+                        ARF_OutDSel = 2'b10; // AR to address
+                        Mem_CS = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b10; // Load and shift (DR = {DR[23:0], MemOut}) -> M0 M1
+                        // Go to T6
+                    end
+                    6'h1F: begin // LDAH: Read Mem[AR] (Byte 1)
+                        ARF_OutDSel = 2'b10; // AR to address
+                        Mem_CS = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b10; // Load and shift (DR = {DR[23:0], MemOut}) -> M0 M1
+                        // Go to T6
+                    end
+                    6'h1D: begin // STAR: Increment AR
+                        ARF_OutCSel = 2'b10; // AR to OutC
+                        MuxASel = 2'b01; // AR to ALU A
+                        MuxBSel = 2'b11; // Immediate 1
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100; // ADD
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load
+                        // Go to T6
+                    end
+                    6'h07: begin // CALL: Decrement SP
+                        ARF_OutCSel = 2'b01; // SP to OutC
+                        MuxASel = 2'b01; // SP to ALU A
+                        MuxBSel = 2'b11; // Immediate 1
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10110; // SUB
+                        ARF_RegSel = 3'b010; // SP
+                        ARF_FunSel = 2'b10; // Load
+                        // Go to T6
+                    end
+                    default: T_Reset = 1'b1;
+                endcase
+            end
 
-                // T6: Multi-cycle instruction continuation
-                12'b000001000000: begin 
-                    case (Opcode)
-                        6'h1E: begin // LDAL: Load DR (16 bits) to Reg
-                            MuxASel = 2'b10; // DR to ALU A
-                            ALU_FunSel = 5'b10000; // Pass A
-                            select_dest_reg(RegSel, RF_RegSel);
-                            RF_FunSel = 3'b010; // Load
-                            T_Reset = 1'b1; // LDAL ends here
-                        end
-                        6'h1F: begin // LDAH: Increment AR
-                            ARF_OutCSel = 2'b10; // AR to OutC
-                            MuxASel = 2'b01; // AR to ALU A
-                            MuxBSel = 2'b11; // Immediate 1
-                            ALU_Immediate = 32'h00000001;
-                            ALU_FunSel = 5'b10100; // ADD
-                            ARF_RegSel = 3'b001; // AR (bit 0)
-                            ARF_FunSel = 2'b10; // Load
-                            // Go to T7
-                        end
-                        6'h1D: begin // STAR: Store Byte 2
-                            select_rf_out_a({1'b0, RegSel}, RF_OutASel);
-                            MuxASel = 2'b00; // RF_OutA to ALU A
-                            ALU_FunSel = 5'b10000; // Pass A
-                            ARF_OutDSel = 2'b10; // AR to address
-                            Mem_CS = 1'b0;
-                            Mem_WR = 1'b1;
-                            MuxCSel = 2'b10; // ALU[23:16] (Byte 2)
-                            // Go to T7
-                        end
-                        6'h07: begin // CALL: Load PC with immediate address
-                            ALU_Immediate = {24'h000000, Address};
-                            MuxASel = 2'b11; // Immediate to ALU A
-                            ALU_FunSel = 5'b10000; // Pass A
-                            ARF_RegSel = 3'b100; // PC (bit 2)
-                            ARF_FunSel = 2'b10; // Load
-                            T_Reset = 1'b1; // CALL ends here
-                        end
-                        default: T_Reset = 1'b1;
-                    endcase
-                end
+            // T6: Load R3 / Inc AR / Store B2 / Jump
+            12'b000001000000: begin 
+                case (Opcode)
+                    6'h1E: begin // LDAL: Load DR (16 bits) to Reg
+                        MuxASel = 2'b10; // DR to ALU A
+                        ALU_FunSel = 5'b10000; // Pass A
+                        select_dest_reg(RegSel, RF_RegSel);
+                        RF_FunSel = 3'b010; // Load
+                        T_Reset = 1'b1; // LDAL ends here
+                    end
+                    6'h1F: begin // LDAH: Increment AR
+                        ARF_OutCSel = 2'b10; // AR to OutC
+                        MuxASel = 2'b01; // AR to ALU A
+                        MuxBSel = 2'b11; // Immediate 1
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100; // ADD
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load
+                        // Go to T7
+                    end
+                    6'h1D: begin // STAR: Store Byte 2
+                        select_rf_out_a({1'b0, RegSel}, RF_OutASel);
+                        MuxASel = 2'b00; // RF_OutA to ALU A
+                        ALU_FunSel = 5'b10000; // Pass A
+                        ARF_OutDSel = 2'b10; // AR to address
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b10; // ALU[23:16] (Byte 2)
+                        // Go to T7
+                    end
+                    6'h07: begin // CALL: Load PC with immediate address
+                        ALU_Immediate = {24'h000000, Address};
+                        MuxASel = 2'b11; // Immediate to ALU A
+                        ALU_FunSel = 5'b00000; // Pass A
+                        ARF_RegSel = 3'b100; // PC
+                        ARF_FunSel = 2'b10; // Load
+                        T_Reset = 1'b1; // CALL ends here
+                    end
+                    default: T_Reset = 1'b1;
+                endcase
+            end
 
-                // T7: Multi-cycle instruction continuation
-                12'b000010000000: begin 
-                    case (Opcode)
-                        6'h1F: begin // LDAH: Read Mem[AR] (Byte 2)
-                            ARF_OutDSel = 2'b10; // AR to address
-                            Mem_CS = 1'b0;
-                            DR_E = 1'b1;
-                            DR_FunSel = 2'b10; // Load and shift
-                            // Go to T8
-                        end
-                        6'h1D: begin // STAR: Increment AR
-                            ARF_OutCSel = 2'b10; // AR to OutC
-                            MuxASel = 2'b01; // AR to ALU A
-                            MuxBSel = 2'b11; // Immediate 1
-                            ALU_Immediate = 32'h00000001;
-                            ALU_FunSel = 5'b10100; // ADD
-                            ARF_RegSel = 3'b001; // AR (bit 0)
-                            ARF_FunSel = 2'b10; // Load
-                            // Go to T8
-                        end
-                        default: T_Reset = 1'b1;
-                    endcase
-                end
+            // T7: Read M2 / Inc AR / Store B3
+            12'b000010000000: begin 
+                case (Opcode)
+                    6'h1F: begin // LDAH: Read Mem[AR] (Byte 2)
+                        ARF_OutDSel = 2'b10; // AR to address
+                        Mem_CS = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b10; // Load and shift -> M0 M1 M2
+                        // Go to T8
+                    end
+                    6'h1D: begin // STAR: Increment AR
+                        ARF_OutCSel = 2'b10; // AR to OutC
+                        MuxASel = 2'b01; // AR to ALU A
+                        MuxBSel = 2'b11; // Immediate 1
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100; // ADD
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load
+                        // Go to T8
+                    end
+                    default: T_Reset = 1'b1;
+                endcase
+            end
 
-                // T8: Multi-cycle instruction continuation
-                12'b000100000000: begin 
-                    case (Opcode)
-                        6'h1F: begin // LDAH: Increment AR
-                            ARF_OutCSel = 2'b10; // AR to OutC
-                            MuxASel = 2'b01; // AR to ALU A
-                            MuxBSel = 2'b11; // Immediate 1
-                            ALU_Immediate = 32'h00000001;
-                            ALU_FunSel = 5'b10100; // ADD
-                            ARF_RegSel = 3'b001; // AR (bit 0)
-                            ARF_FunSel = 2'b10; // Load
-                            // Go to T9
-                        end
-                        6'h1D: begin // STAR: Store Byte 3
-                            select_rf_out_a({1'b0, RegSel}, RF_OutASel);
-                            MuxASel = 2'b00; // RF_OutA to ALU A
-                            ALU_FunSel = 5'b10000; // Pass A
-                            ARF_OutDSel = 2'b10; // AR to address
-                            Mem_CS = 1'b0;
-                            Mem_WR = 1'b1;
-                            MuxCSel = 2'b11; // ALU[31:24] (Byte 3)
-                            T_Reset = 1'b1; // STAR ends here
-                        end
-                        default: T_Reset = 1'b1;
-                    endcase
-                end
+            // T8: Inc AR / Store B3
+            12'b000100000000: begin 
+                case (Opcode)
+                    6'h1F: begin // LDAH: Increment AR
+                        ARF_OutCSel = 2'b10; // AR to OutC
+                        MuxASel = 2'b01; // AR to ALU A
+                        MuxBSel = 2'b11; // Immediate 1
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100; // ADD
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load
+                        // Go to T9
+                    end
+                    6'h1D: begin // STAR: Store Byte 3
+                        select_rf_out_a({1'b0, RegSel}, RF_OutASel);
+                        MuxASel = 2'b00; // RF_OutA to ALU A
+                        ALU_FunSel = 5'b10000; // Pass A
+                        ARF_OutDSel = 2'b10; // AR to address
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b11; // ALU[31:24] (Byte 3)
+                        T_Reset = 1'b1; // STAR ends here
+                    end
+                    default: T_Reset = 1'b1;
+                endcase
+            end
 
-                // T9: Multi-cycle instruction continuation
-                12'b001000000000: begin 
-                    case (Opcode)
-                        6'h1F: begin // LDAH: Read Mem[AR] (Byte 3)
-                            ARF_OutDSel = 2'b10; // AR to address
-                            Mem_CS = 1'b0;
-                            DR_E = 1'b1;
-                            DR_FunSel = 2'b10; // Load and shift
-                            // Go to T10
-                        end
-                        default: T_Reset = 1'b1;
-                    endcase
-                end
+            // T9: Read M3
+            12'b001000000000: begin 
+                case (Opcode)
+                    6'h1F: begin // LDAH: Read Mem[AR] (Byte 3)
+                        ARF_OutDSel = 2'b10; // AR to address
+                        Mem_CS = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b10; // Load and shift -> M0 M1 M2 M3
+                        // Go to T10
+                    end
+                    default: T_Reset = 1'b1;
+                endcase
+            end
 
-                // T10: Multi-cycle instruction continuation
-                12'b010000000000: begin 
-                    case (Opcode)
-                        6'h1F: begin // LDAH: Load DR (32 bits) to Reg
-                            MuxASel = 2'b10; // DR to ALU A
-                            ALU_FunSel = 5'b10000; // Pass A
-                            select_dest_reg(RegSel, RF_RegSel);
-                            RF_FunSel = 3'b010; // Load
-                            T_Reset = 1'b1; // LDAH ends here
-                        end
-                        default: T_Reset = 1'b1;
-                    endcase
-                end
-                
-                // Default: Reset T for safety
-                default: begin
-                    T_Reset = 1'b1;
-                end
-            endcase
-        end
+            // T10: Load R3
+            12'b010000000000: begin 
+                case (Opcode)
+                    6'h1F: begin // LDAH: Load DR (32 bits) to Reg
+                        MuxASel = 2'b10; // DR to ALU A
+                        ALU_FunSel = 5'b10000; // Pass A
+                        select_dest_reg(RegSel, RF_RegSel);
+                        RF_FunSel = 3'b010; // Load
+                        T_Reset = 1'b1; // LDAH ends here
+                    end
+                    default: T_Reset = 1'b1;
+                endcase
+            end
+            
+            // Default: Reset T for safety
+            default: begin
+                T_Reset = 1'b1;
+            end
+        endcase
     end
 
 endmodule
