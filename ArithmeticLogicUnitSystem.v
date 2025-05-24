@@ -110,7 +110,7 @@ module ArithmeticLogicUnitSystem(
 
     Memory MEM (
         .Address(ARF_OutD_int),
-        .Data(IROut[7:0]),
+        .Data(MuxCOut),
         .MemOut(MemOut),
         .CS(Mem_CS),
         .WR(Mem_WR),
@@ -122,7 +122,7 @@ module ArithmeticLogicUnitSystem(
             2'b00: ALU_A_bus = RF_OutA_int;
             2'b01: ALU_A_bus = {16'h0000, ARF_OutC_int};
             2'b10: ALU_A_bus = DROut;
-            2'b11: ALU_A_bus = {24'h0, IROut[7:0]};
+            2'b11: ALU_A_bus = I;
         endcase
     end
 
@@ -131,7 +131,7 @@ module ArithmeticLogicUnitSystem(
             2'b00: ALU_B_bus = RF_OutB_int;
             2'b01: ALU_B_bus = {16'h0000, ARF_OutC_int};
             2'b10: ALU_B_bus = DROut;
-            2'b11: ALU_B_bus = {24'h0, IROut[7:0]};
+            2'b11: ALU_B_bus = I;
         endcase
     end
 
@@ -140,7 +140,7 @@ module ArithmeticLogicUnitSystem(
             2'b00: MuxAOut = ALUOut;
             2'b01: MuxAOut = {16'h0000, ARF_OutC_int};
             2'b10: MuxAOut = DROut;
-            2'b11: MuxAOut = {24'h0, IROut[7:0]};
+            2'b11: MuxAOut = I;
             default: MuxAOut = 32'hxxxxxxxx;
         endcase
     end
@@ -150,7 +150,7 @@ module ArithmeticLogicUnitSystem(
             2'b00: MuxBOut = ALUOut;
             2'b01: MuxBOut = {16'h0000, ARF_OutC_int};
             2'b10: MuxBOut = DROut;
-            2'b11: MuxBOut = {24'h0, IROut[7:0]};
+            2'b11: MuxBOut = I;
             default: MuxBOut = 32'hxxxxxxxx;
         endcase
     end
