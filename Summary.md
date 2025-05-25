@@ -1,0 +1,7 @@
+Register16bit(I[15:0], E, FunSel[1:0], Clock) -> Q[15:0]: A 16-bit synchronous register that, on Clock positive edge and E high, either decrements Q (FunSel=00), increments Q (FunSel=01), loads I into Q (FunSel=10), or resets Q to zero (FunSel=11).
+
+Register32bit(I[31:0], E, FunSel[2:0], Clock) -> Q[31:0]: A 32-bit synchronous register that, on Clock positive edge and E high, updates Q based on FunSel: decrements (000), increments (001), loads I (010), resets to zero (011), shifts Q left by 8 and fills with zeros (100), shifts Q left by 16 and fills with zeros (101), concatenates Q[23:0] with I[7:0] (110), or sign-extends I[15:0] (111).
+
+AddressRegisterFile(I[31:0], OutCSel[1:0], OutDSel[1:0], RegSel[2:0], FunSel[1:0], Clock) -> OutC[15:0], OutD[15:0]: This module contains three 16-bit Register16bit instances (PC, AR, SP), each enabled by a bit from RegSel and performing operations based on FunSel on I[15:0]; OutC and OutD are assigned the value of PC, SP, or AR based on OutCSel and OutDSel respectively.
+
+ArithmeticLogicUnit(A[31:0], B[31:0], FunSel[4:0], WF, Clock) -> ALUOut[31:0], FlagsOut[3:0]: This module performs various 16-bit or 32-bit arithmetic (add, add with carry, subtract) and logical (AND, OR, XOR, NAND, NOT) operations, along with shifts (logical, arithmetic, rotate), on inputs A and B based on FunSel, outputting the result to ALUOut and updating FlagsOut (Zero, Carry, Negative, Overflow) synchronously on Clock if WF is high.

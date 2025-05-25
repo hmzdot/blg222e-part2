@@ -79,7 +79,7 @@ OPCODE (6-bit) | DSTREG (3-bit) | SREG1 (3-bit) | SREG2 (3-bit) | 0
 
 ## Table 3: Register Selection
 
-| Code | Register |
+| DSTREG/SREG1/SREG2  | Register |
 |------|----------|
 | 000  | PC       |
 | 001  | SP       |
@@ -110,29 +110,3 @@ DEC R1, R1
 BNE LABEL        # Repeat if R1 > 0  
 INC AR, AR  
 STAR R2          # Store total at 0xC9  
-
----
-
-## Submission Instructions
-
-* Submit Verilog HDL implementation as a **single zip file** to Ninova.
-* **One member per group** submits, and must include their student ID.
-* Include:
-
-  * Verilog module files (.v)
-  * Given simulation files (.v)
-  * Report:
-
-    * Group members
-    * Control unit design details
-    * Clock cycle counts for each instruction
-    * Clock cycle count for example code
-    * Task distribution
-* Test using the provided `.bat` and simulation files.
-* No partial credit; broken code gets **zero**.
-* Ask questions on the **Message Board**, not via email.
-
-
-I want you to implement @CPUSystem.v according to the task above. Part 4 mentioned in the task is the @ArithmeticLogicUnitSystem.v file that's already been implemented.
-
-Make sure the CPUSystem is passing the simulations in @CPUSystemSimulation.v  and @CPUSystemSimulation_Factorial.v and don't change the simulation files

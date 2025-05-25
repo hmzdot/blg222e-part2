@@ -11,10 +11,10 @@ module DataRegister(
     always @(posedge Clock) begin
         if (E) begin
             case (FunSel)
-                2'b00:  DROut <= { {24{I[7]}}, I };
-                2'b01:  DROut <= { 24'h0, I };
-                2'b10:  DROut <= { DROut[23:0], I };
-                2'b11:  DROut <= { I, DROut[31:8] };
+                2'b00:  DROut <= { {24{I[7]}}, I };     // Sign-extend load
+                2'b01:  DROut <= { 24'h0, I };          // Zero-extend load
+                2'b10:  DROut <= { DROut[23:0], I };    // Load right
+                2'b11:  DROut <= { I, DROut[31:8] };    // Load left
                 default: ;
             endcase
         end

@@ -86,6 +86,21 @@ cpu_system_factorial:
 	Register16bit.v \
 	Helper.v && unbuffer vvp ./out
 
+cpu_debug:
+	iverilog -o out \
+	debug.v \
+	CPUSystem.v \
+	ArithmeticLogicUnitSystem.v \
+	ArithmeticLogicUnit.v \
+	RegisterFile.v \
+	AddressRegisterFile.v \
+	InstructionRegister.v \
+	DataRegister.v \
+	Memory.v \
+	Register32bit.v \
+	Register16bit.v \
+	Helper.v && unbuffer vvp ./out
+
 clean:
 	rm -f out
 
