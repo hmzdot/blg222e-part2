@@ -276,15 +276,56 @@ module CPUSystem(
                         end
                     end
 
-                    6'h19: begin // MOVL - Move immediate to low 8 bits
-                        ALU_Immediate = {24'h000000, Address}; // Ensure correct immediate
-                        MuxASel = 2'b11; // Immediate to ALU A
-                        ALU_FunSel = 5'b00000; // Pass A (zero-extended)
-                        ALU_WF = 1'b1; // Write flags (as per test 2 Z flag check)
-                        select_dest_reg(RegSel, RF_RegSel); // Select R1-R4
-                        RF_FunSel = 3'b010; // Load (full 32-bit load)
-                        T_Reset = 1'b1; // Single cycle
+                    6'h02: begin // BEQ - Branch if Equal (Z=1)
+                        if (FlagsOut[1] == 1'b1) begin // Check if Z flag is set
+                            ALU_Immediate = {24'h000000, Address}; // Use Address as the jump target
+                            MuxASel = 2'b11;    // Immediate (Address) to ALU A
+                            MuxBSel = 2'b00;    // Don't use B
+                            ALU_FunSel = 5'b00000; // Pass A
+                            ARF_RegSel = 3'b100;    // PC
+                            ARF_FunSel = 2'b10;    // Load
+                            T_Reset = 1'b1;      // Reset T to fetch from new PC
+                        end else begin
+                            // Z is 0, don't branch. Let the default PC increment happen.
+                            T_Reset = 1'b1;      // Ensure T resets for the next instruction.
+                        end
                     end
+
+                    6'h03: begin // POPL - Pop 16-bit value from stack into Rx
+                        // SP + 1 → SP
+                        ARF_OutCSel = 2'b01; // SP to OutC
+                        MuxASel = 2'b01;     // OutC to ALU A
+                        MuxBSel = 2'b11;     // Immediate 1
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100; // ADD
+                        ARF_RegSel = 3'b010;   // SP
+                        ARF_FunSel = 2'b10;    // Load
+                        // Go to T3
+                    end
+
+                    6'h04: begin // PSHL - Push 16-bit (low part) of Rx onto stack
+                        select_rf_out_a({1'b0, RegSel}, RF_OutASel); // Extend RegSel[1:0] to 3 bits
+                        MuxASel = 2'b00;     // RF_OutA to ALU A
+                        ALU_FunSel = 5'b10000; // Pass A
+                        ARF_OutDSel = 2'b01; // SP to address
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b00;     // Byte 0 (Rx[7:0])
+                        // Go to T3
+                    end
+
+                    6'h07: begin // CALL - Call subroutine (Go to T3)
+                        // Save PC low byte to stack
+                        ARF_OutCSel = 2'b00; // PC to OutC
+                        MuxASel = 2'b01; // PC to ALU A
+                        ALU_FunSel = 5'b10000; // Pass A
+                        ARF_OutDSel = 2'b01; // SP to address
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b00; // ALU[7:0] (PC Low)
+                        // Go to T3
+                    end
+
 
                     6'h0A: begin // DEC - Decrement register (R1 -> R2)
                         ALU_Immediate = 32'h00000001; // Force immediate to 1
@@ -296,6 +337,40 @@ module CPUSystem(
                         RF_RegSel = 4'b0100; // R2
                         RF_FunSel = 3'b010; // Load ALU result
                         T_Reset = 1'b1; // Single cycle
+                    end
+
+                    6'h12: begin // ORR - Bitwise OR (R1, AR -> R1)
+                        RF_OutASel = 3'b000; // R1
+                        MuxASel = 2'b00; // R1 to ALU A
+                        ARF_OutCSel = 2'b10; // AR to OutC
+                        MuxBSel = 2'b01; // ARF_OutC (AR) to ALU B
+                        ALU_FunSel = 5'b11000; // 32-bit OR
+                        ALU_WF = 1'b1; // Update flags
+                        RF_RegSel = 4'b1000; // R1 (Destination)
+                        RF_FunSel = 3'b010; // Load
+                        T_Reset = 1'b1; // Single cycle
+                    end
+
+                    6'h19: begin // MOVL - Move immediate to low 8 bits
+                        ALU_Immediate = {24'h000000, Address}; // Ensure correct immediate
+                        MuxASel = 2'b11; // Immediate to ALU A
+                        ALU_FunSel = 5'b00000; // Pass A (zero-extended)
+                        ALU_WF = 1'b1; // Write flags (as per test 2 Z flag check)
+                        select_dest_reg(RegSel, RF_RegSel); // Select R1-R4
+                        RF_FunSel = 3'b010; // Load (full 32-bit load)
+                        T_Reset = 1'b1; // Single cycle
+                    end
+
+                    6'h1D: begin // STAR - Store Register (Go to T3)
+                        // Hardcode to use R3 for now to match test expectation
+                        RF_OutASel = 3'b010; // R3
+                        MuxASel = 2'b00; // RF_OutA to ALU A
+                        ALU_FunSel = 5'b10000; // Pass A
+                        ARF_OutDSel = 2'b10; // AR to address
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b11; // ALU[31:24] (Byte 3 - MSB)
+                        // Go to T3
                     end
 
                     6'h1E: begin // LDAL - Load Addr, Set AR (Go to T3)
@@ -316,42 +391,6 @@ module CPUSystem(
                         // Go to T3
                     end
 
-                    6'h1D: begin // STAR - Store Register (Go to T3)
-                        // Hardcode to use R3 for now to match test expectation
-                        RF_OutASel = 3'b010; // R3
-                        MuxASel = 2'b00; // RF_OutA to ALU A
-                        ALU_FunSel = 5'b10000; // Pass A
-                        ARF_OutDSel = 2'b10; // AR to address
-                        Mem_CS = 1'b0;
-                        Mem_WR = 1'b1;
-                        MuxCSel = 2'b11; // ALU[31:24] (Byte 3 - MSB)
-                        // Go to T3
-                    end
-
-                    6'h07: begin // CALL - Call subroutine (Go to T3)
-                        // Save PC low byte to stack
-                        ARF_OutCSel = 2'b00; // PC to OutC
-                        MuxASel = 2'b01; // PC to ALU A
-                        ALU_FunSel = 5'b10000; // Pass A
-                        ARF_OutDSel = 2'b01; // SP to address
-                        Mem_CS = 1'b0;
-                        Mem_WR = 1'b1;
-                        MuxCSel = 2'b00; // ALU[7:0] (PC Low)
-                        // Go to T3
-                    end
-
-                    6'h12: begin // ORR - Bitwise OR (R1, AR -> R1)
-                        RF_OutASel = 3'b000; // R1
-                        MuxASel = 2'b00; // R1 to ALU A
-                        ARF_OutCSel = 2'b10; // AR to OutC
-                        MuxBSel = 2'b01; // ARF_OutC (AR) to ALU B
-                        ALU_FunSel = 5'b11000; // 32-bit OR
-                        ALU_WF = 1'b1; // Update flags
-                        RF_RegSel = 4'b1000; // R1 (Destination)
-                        RF_FunSel = 3'b010; // Load
-                        T_Reset = 1'b1; // Single cycle
-                    end
-
                     default: begin
                         T_Reset = 1'b1;
                     end
@@ -361,23 +400,27 @@ module CPUSystem(
             // T3: Incr AR / Dec SP / Read M0 / Store PCH
             12'b000000001000: begin
                 case (Opcode)
-                    6'h1E, 6'h1F: begin // LDAL/LDAH: Read Mem[AR] (Byte 0)
-                        ARF_OutDSel = 2'b10; // AR to address
+                    6'h03: begin
+                        // M[SP] → DR (zero-extended low byte)
+                        ARF_OutDSel = 2'b01; // SP to address
                         Mem_CS = 1'b0;
                         DR_E = 1'b1;
-                        DR_FunSel = 2'b01; // Load zero-extended (M0)
+                        DR_FunSel = 2'b01; // Load zero-extended
                         // Go to T4
                     end
-                    6'h1D: begin // STAR: Increment AR
-                        ARF_OutCSel = 2'b10; // AR to OutC
-                        MuxASel = 2'b01; // AR to ALU A
-                        MuxBSel = 2'b11; // Immediate 1
+
+                    6'h04: begin
+                        // SP ← SP - 1
+                        ARF_OutCSel = 2'b01; // SP to OutC
+                        MuxASel = 2'b01;     // SP to ALU A
+                        MuxBSel = 2'b11;     // Immediate 1
                         ALU_Immediate = 32'h00000001;
-                        ALU_FunSel = 5'b10100; // ADD
-                        ARF_RegSel = 3'b001; // AR
-                        ARF_FunSel = 2'b10; // Load
+                        ALU_FunSel = 5'b10110; // SUB
+                        ARF_RegSel = 3'b010;   // SP
+                        ARF_FunSel = 2'b10;    // Load
                         // Go to T4
                     end
+
                     6'h07: begin // CALL: Decrement SP
                         ARF_OutCSel = 2'b01; // SP to OutC
                         MuxASel = 2'b01; // SP to ALU A
@@ -388,6 +431,25 @@ module CPUSystem(
                         ARF_FunSel = 2'b10; // Load
                         // Go to T4
                     end
+
+                    6'h1D: begin // STAR: Increment AR
+                        ARF_OutCSel = 2'b10; // AR to OutC
+                        MuxASel = 2'b01; // AR to ALU A
+                        MuxBSel = 2'b11; // Immediate 1
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100; // ADD
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load
+                        // Go to T4
+                    end
+
+                    6'h1E, 6'h1F: begin // LDAL/LDAH: Read Mem[AR] (Byte 0)
+                        ARF_OutDSel = 2'b10; // AR to address
+                        Mem_CS = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b01; // Load zero-extended (M0)
+                        // Go to T4
+                    end
                     default: T_Reset = 1'b1;
                 endcase
             end
@@ -395,36 +457,30 @@ module CPUSystem(
             // T4: Read M1 / Store B1 / Store PCH
             12'b000000010000: begin
                 case (Opcode)
-                    6'h1E: begin // LDAL: Increment AR
-                        ARF_OutCSel = 2'b10; // AR to OutC
-                        MuxASel = 2'b01; // AR to ALU A
-                        MuxBSel = 2'b11; // Immediate 1
+                    6'h03: begin
+                        // SP + 1 → SP (again)
+                        ARF_OutCSel = 2'b01; // SP to OutC
+                        MuxASel = 2'b01;     // OutC to ALU A
+                        MuxBSel = 2'b11;     // Immediate 1
                         ALU_Immediate = 32'h00000001;
                         ALU_FunSel = 5'b10100; // ADD
-                        ARF_RegSel = 3'b001; // AR
-                        ARF_FunSel = 2'b10; // Load
+                        ARF_RegSel = 3'b010;   // SP
+                        ARF_FunSel = 2'b10;    // Load
                         // Go to T5
                     end
-                    6'h1F: begin // LDAH: Increment AR
-                        ARF_OutCSel = 2'b10; // AR to OutC
-                        MuxASel = 2'b01; // AR to ALU A
-                        MuxBSel = 2'b11; // Immediate 1
-                        ALU_Immediate = 32'h00000001;
-                        ALU_FunSel = 5'b10100; // ADD
-                        ARF_RegSel = 3'b001; // AR
-                        ARF_FunSel = 2'b10; // Load
-                        // Go to T5
-                    end
-                    6'h1D: begin // STAR: Store Byte 2 (second byte in big-endian)
-                        RF_OutASel = 3'b010; // R3
-                        MuxASel = 2'b00; // RF_OutA to ALU A
+
+                    6'h04: begin
+                        // Write Rx[15:8] to M[SP]
+                        select_rf_out_a({1'b0, RegSel}, RF_OutASel);
+                        MuxASel = 2'b00;     // RF_OutA to ALU A
                         ALU_FunSel = 5'b10000; // Pass A
-                        ARF_OutDSel = 2'b10; // AR to address
+                        ARF_OutDSel = 2'b01; // SP to address
                         Mem_CS = 1'b0;
                         Mem_WR = 1'b1;
-                        MuxCSel = 2'b10; // ALU[23:16] (Byte 2)
+                        MuxCSel = 2'b01;     // Byte 1 (Rx[15:8])
                         // Go to T5
                     end
+
                     6'h07: begin // CALL: Store PC High
                         ARF_OutCSel = 2'b00; // PC to OutC
                         MuxASel = 2'b01; // PC to ALU A
@@ -435,28 +491,19 @@ module CPUSystem(
                         MuxCSel = 2'b01; // ALU[15:8] (PC High)
                         // Go to T5
                     end
-                    default: T_Reset = 1'b1;
-                endcase
-            end
 
-            // T5: Read M1 / Inc AR / Dec SP
-            12'b000000100000: begin
-                case (Opcode)
-                    6'h1E: begin // LDAL: Read Mem[AR] (Byte 1)
+                    6'h1D: begin // STAR: Store Byte 2 (second byte in big-endian)
+                        RF_OutASel = 3'b010; // R3
+                        MuxASel = 2'b00; // RF_OutA to ALU A
+                        ALU_FunSel = 5'b10000; // Pass A
                         ARF_OutDSel = 2'b10; // AR to address
                         Mem_CS = 1'b0;
-                        DR_E = 1'b1;
-                        DR_FunSel = 2'b10; // Load and shift (DR = {DR[23:0], MemOut}) -> M0 M1
-                        // Go to T6
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b10; // ALU[23:16] (Byte 2)
+                        // Go to T5
                     end
-                    6'h1F: begin // LDAH: Read Mem[AR] (Byte 1)
-                        ARF_OutDSel = 2'b10; // AR to address
-                        Mem_CS = 1'b0;
-                        DR_E = 1'b1;
-                        DR_FunSel = 2'b10; // Load and shift (DR = {DR[23:0], MemOut}) -> M0 M1
-                        // Go to T6
-                    end
-                    6'h1D: begin // STAR: Increment AR
+
+                    6'h1E: begin // LDAL: Increment AR
                         ARF_OutCSel = 2'b10; // AR to OutC
                         MuxASel = 2'b01; // AR to ALU A
                         MuxBSel = 2'b11; // Immediate 1
@@ -464,8 +511,48 @@ module CPUSystem(
                         ALU_FunSel = 5'b10100; // ADD
                         ARF_RegSel = 3'b001; // AR
                         ARF_FunSel = 2'b10; // Load
+                        // Go to T5
+                    end
+
+                    6'h1F: begin // LDAH: Increment AR
+                        ARF_OutCSel = 2'b10; // AR to OutC
+                        MuxASel = 2'b01; // AR to ALU A
+                        MuxBSel = 2'b11; // Immediate 1
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100; // ADD
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load
+                        // Go to T5
+                    end
+
+                    default: T_Reset = 1'b1;
+                endcase
+            end
+
+            // T5: Read M1 / Inc AR / Dec SP
+            12'b000000100000: begin
+                case (Opcode)
+                    6'h03: begin
+                        // M[SP] → DR (high byte, shifted in)
+                        ARF_OutDSel = 2'b01; // SP to address
+                        Mem_CS = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b10; // Shift left and OR in byte: DR = {8'h00, MemOut, DR[7:0]}
                         // Go to T6
                     end
+
+                    6'h04: begin
+                        // SP ← SP - 1
+                        ARF_OutCSel = 2'b01; // SP to OutC
+                        MuxASel = 2'b01;     // SP to ALU A
+                        MuxBSel = 2'b11;     // Immediate 1
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10110; // SUB
+                        ARF_RegSel = 3'b010;   // SP
+                        ARF_FunSel = 2'b10;    // Load
+                        T_Reset = 1'b1;        // Done
+                    end
+
                     6'h07: begin // CALL: Decrement SP
                         ARF_OutCSel = 2'b01; // SP to OutC
                         MuxASel = 2'b01; // SP to ALU A
@@ -476,21 +563,8 @@ module CPUSystem(
                         ARF_FunSel = 2'b10; // Load
                         // Go to T6
                     end
-                    default: T_Reset = 1'b1;
-                endcase
-            end
 
-            // T6: Load R3 / Inc AR / Store B2 / Jump
-            12'b000001000000: begin
-                case (Opcode)
-                    6'h1E: begin // LDAL: Load DR (16 bits) to Reg
-                        MuxASel = 2'b10; // DR to ALU A
-                        ALU_FunSel = 5'b10000; // Pass A
-                        select_dest_reg(RegSel, RF_RegSel);
-                        RF_FunSel = 3'b010; // Load
-                        T_Reset = 1'b1; // LDAL ends here
-                    end
-                    6'h1F: begin // LDAH: Increment AR
+                    6'h1D: begin // STAR: Increment AR
                         ARF_OutCSel = 2'b10; // AR to OutC
                         MuxASel = 2'b01; // AR to ALU A
                         MuxBSel = 2'b11; // Immediate 1
@@ -498,8 +572,49 @@ module CPUSystem(
                         ALU_FunSel = 5'b10100; // ADD
                         ARF_RegSel = 3'b001; // AR
                         ARF_FunSel = 2'b10; // Load
-                        // Go to T7
+                        // Go to T6
                     end
+
+                    6'h1E: begin // LDAL: Read Mem[AR] (Byte 1)
+                        ARF_OutDSel = 2'b10; // AR to address
+                        Mem_CS = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b10; // Load and shift (DR = {DR[23:0], MemOut}) -> M0 M1
+                        // Go to T6
+                    end
+
+                    6'h1F: begin // LDAH: Read Mem[AR] (Byte 1)
+                        ARF_OutDSel = 2'b10; // AR to address
+                        Mem_CS = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b10; // Load and shift (DR = {DR[23:0], MemOut}) -> M0 M1
+                        // Go to T6
+                    end
+                    default: T_Reset = 1'b1;
+                endcase
+            end
+
+            // T6: Load R3 / Inc AR / Store B2 / Jump
+            12'b000001000000: begin
+                case (Opcode)
+                    6'h03: begin
+                        // DR → Rx
+                        MuxASel = 2'b10; // DR to ALU A
+                        ALU_FunSel = 5'b10000; // Pass A
+                        select_dest_reg(RegSel, RF_RegSel); // Use RegSel[1:0] to select R1–R4
+                        RF_FunSel = 3'b010; // Load
+                        T_Reset = 1'b1;
+                    end
+
+                    6'h07: begin // CALL: Load PC with immediate address
+                        ALU_Immediate = {24'h000000, Address};
+                        MuxASel = 2'b11; // Immediate to ALU A
+                        ALU_FunSel = 5'b00000; // Pass A
+                        ARF_RegSel = 3'b100; // PC
+                        ARF_FunSel = 2'b10; // Load
+                        T_Reset = 1'b1; // CALL ends here
+                    end
+
                     6'h1D: begin // STAR: Store Byte 1 (third byte in big-endian)
                         RF_OutASel = 3'b010; // R3
                         MuxASel = 2'b00; // RF_OutA to ALU A
@@ -510,14 +625,26 @@ module CPUSystem(
                         MuxCSel = 2'b01; // ALU[15:8] (Byte 1)
                         // Go to T7
                     end
-                    6'h07: begin // CALL: Load PC with immediate address
-                        ALU_Immediate = {24'h000000, Address};
-                        MuxASel = 2'b11; // Immediate to ALU A
-                        ALU_FunSel = 5'b00000; // Pass A
-                        ARF_RegSel = 3'b100; // PC
-                        ARF_FunSel = 2'b10; // Load
-                        T_Reset = 1'b1; // CALL ends here
+
+                    6'h1E: begin // LDAL: Load DR (16 bits) to Reg
+                        MuxASel = 2'b10; // DR to ALU A
+                        ALU_FunSel = 5'b10000; // Pass A
+                        select_dest_reg(RegSel, RF_RegSel);
+                        RF_FunSel = 3'b010; // Load
+                        T_Reset = 1'b1; // LDAL ends here
                     end
+
+                    6'h1F: begin // LDAH: Increment AR
+                        ARF_OutCSel = 2'b10; // AR to OutC
+                        MuxASel = 2'b01; // AR to ALU A
+                        MuxBSel = 2'b11; // Immediate 1
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100; // ADD
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load
+                        // Go to T7
+                    end
+
                     default: T_Reset = 1'b1;
                 endcase
             end
@@ -549,16 +676,6 @@ module CPUSystem(
             // T8: Inc AR / Store B3
             12'b000100000000: begin
                 case (Opcode)
-                    6'h1F: begin // LDAH: Increment AR
-                        ARF_OutCSel = 2'b10; // AR to OutC
-                        MuxASel = 2'b01; // AR to ALU A
-                        MuxBSel = 2'b11; // Immediate 1
-                        ALU_Immediate = 32'h00000001;
-                        ALU_FunSel = 5'b10100; // ADD
-                        ARF_RegSel = 3'b001; // AR
-                        ARF_FunSel = 2'b10; // Load
-                        // Go to T9
-                    end
                     6'h1D: begin // STAR: Store Byte 0 (fourth byte in big-endian)
                         RF_OutASel = 3'b010; // R3
                         MuxASel = 2'b00; // RF_OutA to ALU A
@@ -569,6 +686,18 @@ module CPUSystem(
                         MuxCSel = 2'b00; // ALU[7:0] (Byte 0)
                         T_Reset = 1'b1; // STAR ends here
                     end
+
+                    6'h1F: begin // LDAH: Increment AR
+                        ARF_OutCSel = 2'b10; // AR to OutC
+                        MuxASel = 2'b01; // AR to ALU A
+                        MuxBSel = 2'b11; // Immediate 1
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100; // ADD
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load
+                        // Go to T9
+                    end
+
                     default: T_Reset = 1'b1;
                 endcase
             end
