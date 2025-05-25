@@ -538,13 +538,33 @@ module CPUSystem(
                     end
 
                     6'h19: begin // MOVL
-                        ALU_Immediate = {24'h000000, Address}; // Ensure correct immediate
-                        MuxASel = 2'b11; // Immediate to ALU A
-                        ALU_FunSel = 5'b00000; // Pass A (zero-extended)
-                        ALU_WF = 1'b1; // Write flags (as per test 2 Z flag check)
-                        select_dest_reg(RegSel, RF_RegSel); // Select R1-R4
-                        RF_FunSel = 3'b010; // Load (full 32-bit load)
-                        T_Reset = 1'b1; // Single cycle
+                        ALU_Immediate = {24'h000000, Address}; // Zero-extend 8-bit immediate
+                        MuxASel = 2'b11;       // Immediate → ALU A
+                        ALU_FunSel = 5'b00000; // PASS A
+                        ALU_WF = 1'b1;         // Write flags (e.g. test Z)
+                        select_dest_reg(RegSel, RF_RegSel); // Based on RegSel[1:0]
+                        RF_FunSel = 3'b010;     // Load to RF
+                        T_Reset = 1'b1;         // One cycle
+                    end
+
+                    6'h1A: begin // MOVSH
+                        select_dest_reg(RegSel, RF_RegSel);     // Rx destination
+                        select_rf_out_a({1'b0, RegSel}, RF_OutASel); // Rx → ALU A
+                        MuxASel = 2'b00;       // RF_OutA → ALU A
+                        MuxBSel = 2'b11;       // Immediate → ALU B
+                        ALU_Immediate = {24'b0, Address}; // 8-bit immediate in low byte
+                        ALU_FunSel = 5'b10011; // MOVSH custom op
+                        ALU_WF = 1'b0;         // No flag update
+                        RF_FunSel = 3'b010;    // Load result into Rx
+                        T_Reset = 1'b1;
+                    end
+
+                    6'h1B: begin // LDARL
+                        ARF_OutDSel = 2'b10; // AR → memory address
+                        Mem_CS = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b01; // Zero-extended load (first byte)
+                        T_Reset = 1'b0; // Continue to T3
                     end
 
                     6'h1D: begin // STAR 
@@ -642,6 +662,23 @@ module CPUSystem(
                         // Go to T4
                     end
 
+                    6'h1B: begin
+                        ARF_OutDSel = 2'b10; // AR → memory address
+                        Mem_CS = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b10; // Shift left, OR in byte
+
+                        ARF_OutCSel = 2'b10;
+                        MuxASel = 2'b01;
+                        MuxBSel = 2'b11;
+                        ALU_Immediate = 32'h1;
+                        ALU_FunSel = 5'b10100;
+                        ARF_RegSel = 3'b001;
+                        ARF_FunSel = 2'b10;
+
+                        T_Reset = 1'b0; // Continue to T4
+                    end
+
                     6'h1D: begin // STAR: Increment AR
                         ARF_OutCSel = 2'b10; // AR to OutC
                         MuxASel = 2'b01; // AR to ALU A
@@ -737,6 +774,14 @@ module CPUSystem(
                         ARF_RegSel = 3'b010;
                         ARF_FunSel = 2'b10;
                         // Go to T5
+                    end
+
+                    6'h1B: begin
+                        MuxASel = 2'b10;         // DR → ALU A
+                        ALU_FunSel = 5'b10000;   // PASS A
+                        select_r_type_reg(DestReg, RF_RegSel);
+                        RF_FunSel = 3'b010;      // Load
+                        T_Reset = 1'b1;          // Done
                     end
 
                     6'h1D: begin // STAR: Store Byte 2 (second byte in big-endian)
