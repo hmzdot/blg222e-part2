@@ -373,27 +373,168 @@ module CPUSystem(
                     end
 
                     6'h0A: begin // DEC
-                        ALU_Immediate = 32'h00000001; // Force immediate to 1
-                        RF_OutASel = 3'b000; // R1
-                        MuxASel = 2'b00; // R1 to ALU A
-                        MuxBSel = 2'b11; // Immediate (1) to ALU B
-                        ALU_FunSel = 5'b10110; // 32-bit subtract (A - B)
-                        ALU_WF = 1'b1; // Write flags
-                        RF_RegSel = 4'b0100; // R2
+                        select_rf_out_a(SrcReg1, RF_OutASel);
+                        MuxASel = 2'b00; // RF_OutA → ALU A
+                        MuxBSel = 2'b11;
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10110; // 32-bit SUB
+                        ALU_WF = 1'b1; // Update flags
+                        select_r_type_reg(DestReg, RF_RegSel);
+                        RF_FunSel = 3'b010; // Load
+                        T_Reset = 1'b1;
+                    end
+
+                    6'h0B: begin // LSL
+                        select_rf_out_a(SrcReg1, RF_OutASel);
+                        MuxASel = 2'b00; // RF_OutA to ALU A
+                        ALU_FunSel = 5'b01011; // LSL by 1
+                        ALU_WF = 1'b1; // Optionally set flags (C, Z, etc.)
+                        select_r_type_reg(DestReg, RF_RegSel);
+                        RF_FunSel = 3'b010; // Load
+                        T_Reset = 1'b1;
+                    end
+
+                    6'h0C: begin // LSR
+                        select_rf_out_a(SrcReg1, RF_OutASel);
+                        MuxASel = 2'b00; // RF_OutA → ALU A
+                        ALU_FunSel = 5'b01100; // LSR by 1
+                        ALU_WF = 1'b1; // Update flags (optional but useful)
+                        select_r_type_reg(DestReg, RF_RegSel);
+                        RF_FunSel = 3'b010; // Load
+                        T_Reset = 1'b1;
+                    end
+
+                    6'h0D: begin // ASR
+                        select_rf_out_a(SrcReg1, RF_OutASel);
+                        MuxASel = 2'b00; // RF_OutA → ALU A
+                        ALU_FunSel = 5'b01101; // ASR by 1 (signed right shift)
+                        ALU_WF = 1'b1; // Update flags
+                        select_r_type_reg(DestReg, RF_RegSel);
+                        RF_FunSel = 3'b010; // Load
+                        T_Reset = 1'b1;
+                    end
+
+                    6'h0E: begin // CSL
+                        select_rf_out_a(SrcReg1, RF_OutASel);
+                        MuxASel = 2'b00; // RF_OutA → ALU A
+                        ALU_FunSel = 5'b01110; // CSL (rotate left through carry) – assumed
+                        ALU_WF = 1'b1; // Update carry and zero flags
+                        select_r_type_reg(DestReg, RF_RegSel);
                         RF_FunSel = 3'b010; // Load ALU result
-                        T_Reset = 1'b1; // Single cycle
+                        T_Reset = 1'b1;
+                    end
+
+                    6'h0F: begin // CSR
+                        select_rf_out_a(SrcReg1, RF_OutASel);
+                        MuxASel = 2'b00; // RF_OutA
+                        ALU_FunSel = 5'b01111; // CSR (rotate right through carry) – assumed
+                        ALU_WF = 1'b1; // Update carry, zero, etc.
+                        select_r_type_reg(DestReg, RF_RegSel);
+                        RF_FunSel = 3'b010; // Load result
+                        T_Reset = 1'b1;
+                    end
+
+                    6'h10: begin // NOT
+                        select_rf_out_a(SrcReg1, RF_OutASel);
+                        MuxASel = 2'b00; // RF_OutA → ALU A
+                        ALU_FunSel = 5'b00010; // NOT (assumed opcode)
+                        ALU_WF = 1'b1; // Update flags (Z, N, etc.)
+                        select_r_type_reg(DestReg, RF_RegSel);
+                        RF_FunSel = 3'b010; // Load
+                        T_Reset = 1'b1;
+                    end
+
+                    6'h11: begin // AND
+                        select_rf_out_a(SrcReg1, RF_OutASel);
+                        RF_OutBSel = SrcReg2; // SREG2 index directly
+                        MuxASel = 2'b00; // RF_OutA → ALU A
+                        MuxBSel = 2'b00; // RF_OutB → ALU B
+                        ALU_FunSel = 5'b11001; // AND opcode (assumed)
+                        ALU_WF = 1'b1; // Update flags
+                        select_r_type_reg(DestReg, RF_RegSel);
+                        RF_FunSel = 3'b010; // Load
+                        T_Reset = 1'b1;
                     end
 
                     6'h12: begin // ORR
-                        RF_OutASel = 3'b000; // R1
-                        MuxASel = 2'b00; // R1 to ALU A
+                        select_rf_out_a(SrcReg1, RF_OutASel);
                         ARF_OutCSel = 2'b10; // AR to OutC
                         MuxBSel = 2'b01; // ARF_OutC (AR) to ALU B
                         ALU_FunSel = 5'b11000; // 32-bit OR
                         ALU_WF = 1'b1; // Update flags
-                        RF_RegSel = 4'b1000; // R1 (Destination)
+                        select_r_type_reg(DestReg, RF_RegSel);
                         RF_FunSel = 3'b010; // Load
                         T_Reset = 1'b1; // Single cycle
+                    end
+
+                    6'h13: begin // XOR
+                        select_rf_out_a(SrcReg1, RF_OutASel); // A input
+                        RF_OutBSel = SrcReg2;                 // B input
+                        MuxASel = 2'b00; // RF_OutA → ALU A
+                        MuxBSel = 2'b00; // RF_OutB → ALU B
+                        ALU_FunSel = 5'b11010; // XOR opcode (assumed)
+                        ALU_WF = 1'b1;         // Update flags
+                        select_r_type_reg(DestReg, RF_RegSel);
+                        RF_FunSel = 3'b010; // Load result
+                        T_Reset = 1'b1;
+                    end
+
+                    6'h14: begin // NAND DST ← ~(SREG1 & SREG2)
+                        select_rf_out_a(SrcReg1, RF_OutASel);
+                        RF_OutBSel = SrcReg2;
+                        MuxASel = 2'b00; // RF_OutA
+                        MuxBSel = 2'b00; // RF_OutB
+                        ALU_FunSel = 5'b11011; // NAND (assumed)
+                        ALU_WF = 1'b1;         // Update flags
+                        select_r_type_reg(DestReg, RF_RegSel);
+                        RF_FunSel = 3'b010;
+                        T_Reset = 1'b1;
+                    end
+
+                    6'h15: begin // ADD
+                        select_rf_out_a(SrcReg1, RF_OutASel);
+                        RF_OutBSel = SrcReg2;
+                        MuxASel = 2'b00; // RF_OutA → ALU A
+                        MuxBSel = 2'b00; // RF_OutB → ALU B
+                        ALU_FunSel = 5'b10100; // 32-bit ADD
+                        ALU_WF = 1'b1;         // Write flags
+                        select_r_type_reg(DestReg, RF_RegSel); // Select destination register
+                        RF_FunSel = 3'b010;    // Load ALU result to register file
+                        T_Reset = 1'b1; // One cycle instruction
+                    end
+
+                    6'h16: begin // ADC – Add with Carry
+                        select_rf_out_a(SrcReg1, RF_OutASel); // A input (SREG1)
+                        RF_OutBSel = SrcReg2;                // B input (SREG2)
+                        MuxASel = 2'b00; // RF_OutA → ALU A
+                        MuxBSel = 2'b00; // RF_OutB → ALU B
+                        ALU_FunSel = 5'b10101; // 32-bit ADC
+                        ALU_WF = 1'b1;          // Write flags
+                        select_r_type_reg(DestReg, RF_RegSel); // Select DSTREG
+                        RF_FunSel = 3'b010;    // Load ALU result into DSTREG
+                        T_Reset = 1'b1;        // Complete in 1 cycle
+                    end
+
+                    6'h17: begin // SUB
+                        select_rf_out_a(SrcReg1, RF_OutASel); // SREG1 → RF_OutA
+                        RF_OutBSel = SrcReg2;                // SREG2 → RF_OutB
+                        MuxASel = 2'b00; // RF_OutA to ALU A
+                        MuxBSel = 2'b00; // RF_OutB to ALU B
+                        ALU_FunSel = 5'b10110; // 32-bit SUB
+                        ALU_WF = 1'b1;         // Write flags
+                        select_r_type_reg(DestReg, RF_RegSel); // Write to DSTREG
+                        RF_FunSel = 3'b010; // Load result
+                        T_Reset = 1'b1; // Single cycle
+                    end
+
+                    6'h18: begin // MOV
+                        select_rf_out_a(SrcReg1, RF_OutASel); // SREG1 → RF_OutA
+                        MuxASel = 2'b00;       // RF_OutA → ALU A
+                        ALU_FunSel = 5'b10000; // PASS A
+                        ALU_WF = 1'b0;          // Don't write flags
+                        select_r_type_reg(DestReg, RF_RegSel); // Write to DSTREG
+                        RF_FunSel = 3'b010;     // Load result
+                        T_Reset = 1'b1;         // One cycle
                     end
 
                     6'h19: begin // MOVL
