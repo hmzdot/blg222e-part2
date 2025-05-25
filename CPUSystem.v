@@ -98,7 +98,7 @@ module CPUSystem(
 
     // Timing counter
     always @(posedge Clock) begin
-        if (Reset) begin
+        if (~Reset) begin // Reset is active low
             T <= 12'b000000000001; // Reset to T0
         end else if (T_Reset) begin
             T <= 12'b000000000001; // Reset to T0
@@ -183,9 +183,8 @@ module CPUSystem(
 
         case (T)
             12'b000000000001: begin // T0: Fetch LSB or Reset
-                if (Reset) begin
-                    // Reset T1 will initialize SP. Here we clear others.
-                    // Use ALU to load 0.
+                if (~Reset) begin // Reset is active low
+                    // Clear all registers using ALU output of 0
                     ALU_Immediate = 32'h00000000;
                     MuxASel = 2'b11;     // Immediate (0) to ALU A
                     ALU_FunSel = 5'b00000; // Pass A
@@ -200,16 +199,9 @@ module CPUSystem(
                     ARF_RegSel = 3'b101;  // Enable PC and AR
                     ARF_FunSel = 2'b10;   // Load function
                     
-                    // Clear DR
+                    // Clear DR by loading 0
                     DR_E = 1'b1;
-                    DR_FunSel = 2'b01;    // Load MemOut (will be 0 if CS is high)
-                                          // A better way would be an explicit DR clear or load 0.
-                                          // Let's force load 0 via ALU.
-                    MuxASel = 2'b11;
-                    ALU_Immediate = 32'h0;
-                    ALU_FunSel = 5'b00000;
-                    DR_E = 1'b1;
-                    DR_FunSel = 2'b11; // Assume 11 means Load from ALU
+                    DR_FunSel = 2'b01;    // Load zero-extended
 
                 end else begin
                     // Fetch LSB
@@ -221,8 +213,8 @@ module CPUSystem(
             end
             
             12'b000000000010: begin // T1: Increment PC, Fetch MSB or Init SP
-                if (Reset) begin
-                    // Initialize SP to 0xFF (This happens on the *next* clock after T0 reset)
+                if (~Reset) begin // Reset is active low
+                    // Initialize SP to 0xFF
                     ALU_Immediate = 32'h000000FF;
                     MuxASel = 2'b11; // Immediate to ALU A
                     ALU_FunSel = 5'b00000; // Pass A
