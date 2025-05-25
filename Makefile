@@ -56,6 +56,36 @@ arithmetic_logic_unit_system:
 		ArithmeticLogicUnitSystem.v \
 		ArithmeticLogicUnitSystemSimulation.v && unbuffer vvp ./out
 
+cpu_system:
+	iverilog -o out \
+	CPUSystemSimulation.v \
+	CPUSystem.v \
+	ArithmeticLogicUnitSystem.v \
+	ArithmeticLogicUnit.v \
+	RegisterFile.v \
+	AddressRegisterFile.v \
+	InstructionRegister.v \
+	DataRegister.v \
+	Memory.v \
+	Register32bit.v \
+	Register16bit.v \
+	Helper.v && unbuffer vvp ./out
+
+cpu_system_factorial:
+	iverilog -o out \
+	CPUSystemSimulation_Factorial.v \
+	CPUSystem.v \
+	ArithmeticLogicUnitSystem.v \
+	ArithmeticLogicUnit.v \
+	RegisterFile.v \
+	AddressRegisterFile.v \
+	InstructionRegister.v \
+	DataRegister.v \
+	Memory.v \
+	Register32bit.v \
+	Register16bit.v \
+	Helper.v && unbuffer vvp ./out
+
 clean:
 	rm -f out
 
