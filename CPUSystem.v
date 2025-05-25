@@ -605,6 +605,20 @@ module CPUSystem(
                         // Go to T3
                     end
 
+                    6'h20: begin // STA
+                        select_rf_out_a({1'b0, RegSel}, RF_OutASel);
+                        MuxASel = 2'b00;         // RF_OutA to ALU A
+                        ALU_FunSel = 5'b10000;   // 32-bit PASS A
+                        ALU_WF = 1'b0;           // No flags written
+                        ALU_Immediate = {24'h000000, Address};
+                        MuxBSel = 2'b11;         // Immediate
+                        MuxASel = 2'b11;         // Immediate
+                        ALU_FunSel = 5'b00000;   // 16-bit PASS A
+                        ARF_RegSel = 3'b001;     // AR
+                        ARF_FunSel = 2'b10;      // Load
+                        T_Reset = 1'b0;          // Continue to T3
+                    end
+
                     default: begin
                         T_Reset = 1'b1;
                     end
@@ -716,6 +730,16 @@ module CPUSystem(
                         DR_FunSel = 2'b01; // Load zero-extended (M0)
                         // Go to T4
                     end
+
+                    6'h20: begin
+                        ARF_OutDSel = 2'b10;     // AR → Mem address
+                        MuxASel = 2'b00;         // RF_OutA (still latched) to ALU A
+                        ALU_FunSel = 5'b10000;   // 32-bit PASS A
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b11;         // Store MSB (Byte 3)
+                    end
+
                     default: T_Reset = 1'b1;
                 endcase
             end
@@ -847,6 +871,16 @@ module CPUSystem(
                         // Go to T5
                     end
 
+                    6'h20: begin
+                        ARF_OutCSel = 2'b10;     // AR to OutC
+                        MuxASel = 2'b01;
+                        MuxBSel = 2'b11;
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100;   // 32-bit ADD
+                        ARF_RegSel = 3'b001;     // AR
+                        ARF_FunSel = 2'b10;      // Load AR++
+                    end
+
                     default: T_Reset = 1'b1;
                 endcase
             end
@@ -956,6 +990,16 @@ module CPUSystem(
                         DR_FunSel = 2'b10; // Load and shift (DR = {DR[23:0], MemOut}) -> M0 M1
                         // Go to T6
                     end
+
+                    6'h20: begin
+                        ARF_OutDSel = 2'b10;
+                        MuxASel = 2'b00;
+                        ALU_FunSel = 5'b10000;
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b10;         // Byte 2
+                    end
+
                     default: T_Reset = 1'b1;
                 endcase
             end
@@ -1056,6 +1100,16 @@ module CPUSystem(
                         // Go to T7
                     end
 
+                    6'h20: begin
+                        ARF_OutCSel = 2'b10;
+                        MuxASel = 2'b01;
+                        MuxBSel = 2'b11;
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100;
+                        ARF_RegSel = 3'b001;
+                        ARF_FunSel = 2'b10;
+                    end
+
                     default: T_Reset = 1'b1;
                 endcase
             end
@@ -1110,6 +1164,15 @@ module CPUSystem(
                         // Go to T8
                     end
 
+                    6'h20: begin
+                        ARF_OutDSel = 2'b10;
+                        MuxASel = 2'b00;
+                        ALU_FunSel = 5'b10000;
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b01; // Byte 1
+                    end
+
                     default: T_Reset = 1'b1;
                 endcase
             end
@@ -1160,6 +1223,16 @@ module CPUSystem(
                         // Go to T9
                     end
 
+                    6'h20: begin
+                        ARF_OutCSel = 2'b10;
+                        MuxASel = 2'b01;
+                        MuxBSel = 2'b11;
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100;
+                        ARF_RegSel = 3'b001;
+                        ARF_FunSel = 2'b10;
+                    end
+
                     default: T_Reset = 1'b1;
                 endcase
             end
@@ -1195,6 +1268,17 @@ module CPUSystem(
                         DR_FunSel = 2'b10; // Load and shift -> M0 M1 M2 M3
                         // Go to T10
                     end
+
+                    6'h20: begin
+                        ARF_OutDSel = 2'b10;
+                        MuxASel = 2'b00;
+                        ALU_FunSel = 5'b10000;
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b00; // Byte 0
+                        T_Reset = 1'b1;
+                    end
+
                     default: T_Reset = 1'b1;
                 endcase
             end
