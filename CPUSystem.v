@@ -97,8 +97,8 @@ module CPUSystem(
     );
 
     // Timing counter
-    always @(posedge Clock) begin
-        if (~Reset) begin // Reset is active low
+    always @(posedge Clock or negedge Reset) begin
+        if (~Reset) begin // Reset is active low on negedge
             T <= 12'b000000000001; // Reset to T0
         end else if (T_Reset) begin
             T <= 12'b000000000001; // Reset to T0
