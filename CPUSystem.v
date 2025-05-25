@@ -567,6 +567,14 @@ module CPUSystem(
                         T_Reset = 1'b0; // Continue to T3
                     end
 
+                    6'h1C: begin // LDARH
+                        ARF_OutDSel = 2'b10; // AR to memory address
+                        Mem_CS = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b01; // Load zero-extended
+                        // Proceed to T3
+                    end
+
                     6'h1D: begin // STAR 
                         // Hardcode to use R3 for now to match test expectation
                         RF_OutASel = 3'b010; // R3
@@ -679,6 +687,17 @@ module CPUSystem(
                         T_Reset = 1'b0; // Continue to T4
                     end
 
+                    6'h1C: begin
+                        ARF_OutCSel = 2'b10;
+                        MuxASel = 2'b01;
+                        MuxBSel = 2'b11;
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100; // ADD
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load AR++
+                        // Proceed to T4
+                    end
+
                     6'h1D: begin // STAR: Increment AR
                         ARF_OutCSel = 2'b10; // AR to OutC
                         MuxASel = 2'b01; // AR to ALU A
@@ -782,6 +801,17 @@ module CPUSystem(
                         select_r_type_reg(DestReg, RF_RegSel);
                         RF_FunSel = 3'b010;      // Load
                         T_Reset = 1'b1;          // Done
+                    end
+
+                    6'h1C: begin // LDARH: Increment AR
+                        ARF_OutCSel = 2'b10; // AR to OutC
+                        MuxASel = 2'b01; // AR to ALU A
+                        MuxBSel = 2'b11; // Immediate 1
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100; // ADD
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load
+                        // Go to T5
                     end
 
                     6'h1D: begin // STAR: Store Byte 2 (second byte in big-endian)
@@ -889,6 +919,17 @@ module CPUSystem(
                         // Go to T6
                     end
 
+                    6'h1C: begin // LDARH: Increment AR
+                        ARF_OutCSel = 2'b10; // AR to OutC
+                        MuxASel = 2'b01; // AR to ALU A
+                        MuxBSel = 2'b11; // Immediate 1
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100; // ADD
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load
+                        // Go to T5
+                    end
+
                     6'h1D: begin // STAR: Increment AR
                         ARF_OutCSel = 2'b10; // AR to OutC
                         MuxASel = 2'b01; // AR to ALU A
@@ -974,6 +1015,17 @@ module CPUSystem(
                         T_Reset = 1'b1;
                     end
 
+                    6'h1C: begin
+                        ARF_OutCSel = 2'b10;
+                        MuxASel = 2'b01;
+                        MuxBSel = 2'b11;
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100; // ADD
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load AR++
+                        // Proceed to T4
+                    end
+
                     6'h1D: begin // STAR: Store Byte 1 (third byte in big-endian)
                         RF_OutASel = 3'b010; // R3
                         MuxASel = 2'b00; // RF_OutA to ALU A
@@ -1028,6 +1080,17 @@ module CPUSystem(
                         ARF_FunSel = 2'b10;      // Load
                     end
 
+                    6'h1C: begin
+                        ARF_OutCSel = 2'b10;
+                        MuxASel = 2'b01;
+                        MuxBSel = 2'b11;
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100; // ADD
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load AR++
+                        // Proceed to T7
+                    end
+
                     6'h1D: begin // STAR: Increment AR
                         ARF_OutCSel = 2'b10; // AR to OutC
                         MuxASel = 2'b01; // AR to ALU A
@@ -1062,6 +1125,17 @@ module CPUSystem(
                         Mem_WR = 1'b1;
                         MuxCSel = 2'b00; // Byte 0 (LSB)
                         // Go to T9
+                    end
+                    
+                    6'h1C: begin
+                        ARF_OutCSel = 2'b10;
+                        MuxASel = 2'b01;
+                        MuxBSel = 2'b11;
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100; // ADD
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load AR++
+                        // Proceed to T7
                     end
 
                     6'h1D: begin // STAR: Store Byte 0 (fourth byte in big-endian)
@@ -1103,6 +1177,17 @@ module CPUSystem(
                         T_Reset = 1'b1; // Done
                     end
 
+                    6'h1C: begin
+                        ARF_OutCSel = 2'b10;
+                        MuxASel = 2'b01;
+                        MuxBSel = 2'b11;
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100; // ADD
+                        ARF_RegSel = 3'b001; // AR
+                        ARF_FunSel = 2'b10; // Load AR++
+                        // Proceed to T7
+                    end
+
                     6'h1F: begin // LDAH: Read Mem[AR] (Byte 3)
                         ARF_OutDSel = 2'b10; // AR to address
                         Mem_CS = 1'b0;
@@ -1116,6 +1201,14 @@ module CPUSystem(
 
             12'b010000000000: begin // T10
                 case (Opcode)
+                    6'h1C: begin // LDARH final step: load to RF
+                        MuxASel = 2'b10; // DR to ALU A
+                        ALU_FunSel = 5'b10000; // Pass A
+                        select_r_type_reg(DestReg, RF_RegSel); // Use 3-bit DestReg
+                        RF_FunSel = 3'b010; // Load
+                        T_Reset = 1'b1;
+                    end
+
                     6'h1F: begin // LDAH: Load DR (32 bits) to Reg
                         MuxASel = 2'b10; // DR to ALU A
                         ALU_FunSel = 5'b10000; // Pass A
