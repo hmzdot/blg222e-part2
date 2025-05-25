@@ -576,8 +576,7 @@ module CPUSystem(
                     end
 
                     6'h1D: begin // STAR 
-                        // Hardcode to use R3 for now to match test expectation
-                        RF_OutASel = 3'b010; // R3
+                        select_rf_out_a(SrcReg1, RF_OutASel);
                         MuxASel = 2'b00; // RF_OutA to ALU A
                         ALU_FunSel = 5'b10000; // Pass A
                         ARF_OutDSel = 2'b10; // AR to address
@@ -617,6 +616,46 @@ module CPUSystem(
                         ARF_RegSel = 3'b001;     // AR
                         ARF_FunSel = 2'b10;      // Load
                         T_Reset = 1'b0;          // Continue to T3
+                    end
+
+                    6'h21: begin // LDDRL
+                        ARF_OutDSel = 2'b10;    // AR → memory address
+                        Mem_CS = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b01;      // Zero-extended load of LSB (M[AR])
+                        T_Reset = 1'b0;         // Continue to T3
+                    end
+
+                    6'h22: begin // LDDRH
+                        ARF_OutDSel = 2'b10;    // AR → memory address
+                        Mem_CS = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b01;      // Load byte 0 (M[AR], zero-extended)
+                        T_Reset = 1'b0;         // Continue
+                    end
+
+                    6'h23: begin // STDR
+                        MuxASel = 2'b10;         // DR → ALU A
+                        ALU_FunSel = 5'b10000;   // PASS A (32-bit)
+                        ALU_WF = 1'b0;           // Don't modify flags
+                        select_dest_reg(RegSel, RF_RegSel); // Pick destination register (R1–R4)
+                        RF_FunSel = 3'b010;      // Load from ALU to RF
+                        T_Reset = 1'b1;          // Complete in 1 cycle
+                    end
+
+                    6'h24: begin // STRIM
+                        // Calculate effective address: AR + OFFSET
+                        ARF_OutCSel = 2'b10;        // AR → OutC
+                        MuxASel = 2'b01;            // AR to ALU A
+                        MuxBSel = 2'b11;            // Immediate
+                        ALU_Immediate = {24'h0, Address}; // Zero-extend 8-bit OFFSET
+                        ALU_FunSel = 5'b10100;      // ADD (32-bit)
+                        ARF_RegSel = 3'b001;        // AR
+                        ARF_FunSel = 2'b10;         // Load AR ← AR + OFFSET
+
+                        // Prepare ALU with Rx
+                        select_rf_out_a({1'b0, RegSel}, RF_OutASel); // Rx → OutA
+                        T_Reset = 1'b0;
                     end
 
                     default: begin
@@ -740,6 +779,36 @@ module CPUSystem(
                         MuxCSel = 2'b11;         // Store MSB (Byte 3)
                     end
 
+                    6'h21: begin
+                        ARF_OutCSel = 2'b10;    // AR to OutC
+                        MuxASel = 2'b01;        // OutC to ALU A
+                        MuxBSel = 2'b11;        // Immediate 1
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100;  // ADD
+                        ARF_RegSel = 3'b001;    // AR
+                        ARF_FunSel = 2'b10;     // Load AR ← AR + 1
+                        T_Reset = 1'b0;         // Proceed to T4
+                    end
+
+                    6'h22: begin
+                        ARF_OutCSel = 2'b10;    // AR to OutC
+                        MuxASel = 2'b01;
+                        MuxBSel = 2'b11;
+                        ALU_Immediate = 32'h1;
+                        ALU_FunSel = 5'b10100;  // ADD
+                        ARF_RegSel = 3'b001;    // AR
+                        ARF_FunSel = 2'b10;     // AR ← AR + 1
+                    end
+
+                    6'h24: begin
+                        ARF_OutDSel = 2'b10;        // AR to address
+                        MuxASel = 2'b00;            // RF_OutA → ALU A
+                        ALU_FunSel = 5'b10000;      // PASS A (32-bit)
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b11;            // Byte 3 (MSB)
+                    end
+
                     default: T_Reset = 1'b1;
                 endcase
             end
@@ -839,7 +908,7 @@ module CPUSystem(
                     end
 
                     6'h1D: begin // STAR: Store Byte 2 (second byte in big-endian)
-                        RF_OutASel = 3'b010; // R3
+                        select_rf_out_a(SrcReg1, RF_OutASel);
                         MuxASel = 2'b00; // RF_OutA to ALU A
                         ALU_FunSel = 5'b10000; // Pass A
                         ARF_OutDSel = 2'b10; // AR to address
@@ -879,6 +948,31 @@ module CPUSystem(
                         ALU_FunSel = 5'b10100;   // 32-bit ADD
                         ARF_RegSel = 3'b001;     // AR
                         ARF_FunSel = 2'b10;      // Load AR++
+                    end
+
+                    6'h21: begin
+                        ARF_OutDSel = 2'b10;    // AR → memory address
+                        Mem_CS = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b10;      // Shift DR << 8 | M[AR] → get full 16-bit value
+                        T_Reset = 1'b1;         // Done
+                    end
+
+                    6'h22: begin
+                        ARF_OutDSel = 2'b10;
+                        Mem_CS = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b10;      // Shift <<8 and OR in next byte
+                    end
+
+                    6'h24: begin
+                        ARF_OutCSel = 2'b10;        // AR to OutC
+                        MuxASel = 2'b01;            // OutC to ALU A
+                        MuxBSel = 2'b11;            // Immediate 1
+                        ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100;      // ADD
+                        ARF_RegSel = 3'b001;        // AR
+                        ARF_FunSel = 2'b10;         // AR ← AR + 1
                     end
 
                     default: T_Reset = 1'b1;
@@ -1000,6 +1094,25 @@ module CPUSystem(
                         MuxCSel = 2'b10;         // Byte 2
                     end
 
+                    6'h22: begin
+                        ARF_OutCSel = 2'b10;
+                        MuxASel = 2'b01;
+                        MuxBSel = 2'b11;
+                        ALU_Immediate = 32'h1;
+                        ALU_FunSel = 5'b10100;
+                        ARF_RegSel = 3'b001;
+                        ARF_FunSel = 2'b10;
+                    end
+
+                    6'h24: begin
+                        ARF_OutDSel = 2'b10;
+                        MuxASel = 2'b00;
+                        ALU_FunSel = 5'b10000;
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b10;            // Byte 2
+                    end
+
                     default: T_Reset = 1'b1;
                 endcase
             end
@@ -1071,7 +1184,7 @@ module CPUSystem(
                     end
 
                     6'h1D: begin // STAR: Store Byte 1 (third byte in big-endian)
-                        RF_OutASel = 3'b010; // R3
+                        select_rf_out_a(SrcReg1, RF_OutASel);
                         MuxASel = 2'b00; // RF_OutA to ALU A
                         ALU_FunSel = 5'b10000; // Pass A
                         ARF_OutDSel = 2'b10; // AR to address
@@ -1105,6 +1218,23 @@ module CPUSystem(
                         MuxASel = 2'b01;
                         MuxBSel = 2'b11;
                         ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100;
+                        ARF_RegSel = 3'b001;
+                        ARF_FunSel = 2'b10;
+                    end
+
+                    6'h22: begin
+                        ARF_OutDSel = 2'b10;
+                        Mem_CS = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b10; // DR = (DR << 8) | M[AR]
+                    end
+
+                    6'h24: begin
+                        ARF_OutCSel = 2'b10;
+                        MuxASel = 2'b01;
+                        MuxBSel = 2'b11;
+                        ALU_Immediate = 32'h1;
                         ALU_FunSel = 5'b10100;
                         ARF_RegSel = 3'b001;
                         ARF_FunSel = 2'b10;
@@ -1173,6 +1303,26 @@ module CPUSystem(
                         MuxCSel = 2'b01; // Byte 1
                     end
 
+                    6'h22: begin
+                        ARF_OutCSel = 2'b10;
+                        MuxASel = 2'b01;
+                        MuxBSel = 2'b11;
+                        ALU_Immediate = 32'h1;
+                        ALU_FunSel = 5'b10100;
+                        ARF_RegSel = 3'b001;
+                        ARF_FunSel = 2'b10;
+                    end
+
+                    6'h24: begin
+                        ARF_OutCSel = 2'b10;
+                        MuxASel = 2'b01;
+                        MuxBSel = 2'b11;
+                        ALU_Immediate = 32'h1;
+                        ALU_FunSel = 5'b10100;
+                        ARF_RegSel = 3'b001;
+                        ARF_FunSel = 2'b10;
+                    end
+
                     default: T_Reset = 1'b1;
                 endcase
             end
@@ -1202,7 +1352,7 @@ module CPUSystem(
                     end
 
                     6'h1D: begin // STAR: Store Byte 0 (fourth byte in big-endian)
-                        RF_OutASel = 3'b010; // R3
+                        select_rf_out_a(SrcReg1, RF_OutASel);
                         MuxASel = 2'b00; // RF_OutA to ALU A
                         ALU_FunSel = 5'b10000; // Pass A
                         ARF_OutDSel = 2'b10; // AR to address
@@ -1228,6 +1378,24 @@ module CPUSystem(
                         MuxASel = 2'b01;
                         MuxBSel = 2'b11;
                         ALU_Immediate = 32'h00000001;
+                        ALU_FunSel = 5'b10100;
+                        ARF_RegSel = 3'b001;
+                        ARF_FunSel = 2'b10;
+                    end
+
+                    6'h22: begin
+                        ARF_OutDSel = 2'b10;
+                        Mem_CS = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b10; // Final byte → DR complete
+                        T_Reset = 1'b1;
+                    end
+
+                    6'h24: begin
+                        ARF_OutCSel = 2'b10;
+                        MuxASel = 2'b01;
+                        MuxBSel = 2'b11;
+                        ALU_Immediate = 32'h1;
                         ALU_FunSel = 5'b10100;
                         ARF_RegSel = 3'b001;
                         ARF_FunSel = 2'b10;
@@ -1276,6 +1444,16 @@ module CPUSystem(
                         Mem_CS = 1'b0;
                         Mem_WR = 1'b1;
                         MuxCSel = 2'b00; // Byte 0
+                        T_Reset = 1'b1;
+                    end
+
+                    6'h24: begin
+                        ARF_OutDSel = 2'b10;
+                        MuxASel = 2'b00;
+                        ALU_FunSel = 5'b10000;
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b00;
                         T_Reset = 1'b1;
                     end
 
