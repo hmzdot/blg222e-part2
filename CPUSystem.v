@@ -307,7 +307,7 @@ module CPUSystem(
                     end
                     
                     6'h01: begin // BNE @ T2
-                        if (FlagsOut[1] == 1'b0) begin 
+                        if (FlagsOut[3] == 1'b0) begin 
                             ALU_Immediate = {24'h000000, Address}; 
                             MuxASel = 2'b11;
                             MuxBSel = 2'b00;
@@ -319,7 +319,7 @@ module CPUSystem(
                     end
 
                     6'h02: begin // BEQ @ T2
-                        if (FlagsOut[1] == 1'b1) begin
+                        if (FlagsOut[3] == 1'b1) begin
                             ALU_Immediate = {24'h000000, Address};
                             MuxASel = 2'b11;            
                             ALU_FunSel = 5'b00000; // Pass A
@@ -406,6 +406,7 @@ module CPUSystem(
                         MuxBSel = 2'b11; // Immediate → ALU B
                         ALU_Immediate = 32'd1;
                         ALU_FunSel = 5'b10100; // 32-bit add
+                        ALU_WF = 1'b1; // Enable flag write
                         RF_FunSel = 3'b010; // Load result into DSTREG
                         T_Reset = 1'b1; 
                     end
@@ -417,6 +418,7 @@ module CPUSystem(
                         MuxBSel = 2'b11; // Immediate → ALU B
                         ALU_Immediate = 32'd1;
                         ALU_FunSel = 5'b10110; // 32-bit sub
+                        ALU_WF = 1'b1; // Enable flag write
                         RF_FunSel = 3'b010; // Load result into DSTREG
                         T_Reset = 1'b1; 
                     end
@@ -730,6 +732,7 @@ module CPUSystem(
                         ALU_Immediate = {24'h000000, IROut[7:0]}; // Zero extend
                         MuxASel = 2'b11;
                         ALU_FunSel = 5'b00000;
+                        ALU_WF = 1'b1; // Enable flag write
                         RF_FunSel = 3'b100; 
                         T_Reset = 1'b1;
                     end
