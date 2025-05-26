@@ -378,7 +378,7 @@ module CPUSystem(
                         // PC[7:0] -> DR, write -> M[SP] (Store PC low byte first)
                         ARF_OutCSel = `ARF_OUT_PC;
                         MuxASel = 2'b01; // PC → ALU A
-                        ALU_FunSel = 5'b00000; // Pass A
+                        ALU_FunSel = 5'b10000; // 32-bit pass A
                         ARF_OutDSel = `ARF_OUT_SP;
                         Mem_CS = 1'b0;
                         Mem_WR = 1'b1;
@@ -1198,7 +1198,7 @@ module CPUSystem(
                         // PC[15:8] -> DR, write -> M[SP] (Store PC high byte)
                         ARF_OutCSel = `ARF_OUT_PC;
                         MuxASel = 2'b01;
-                        ALU_FunSel = 5'b00000;
+                        ALU_FunSel = 5'b10000; // 32-bit pass A
                         ARF_OutDSel = `ARF_OUT_SP;
                         Mem_CS = 1'b0;
                         Mem_WR = 1'b1;
@@ -1626,7 +1626,7 @@ module CPUSystem(
                         // PC <- VALUE
                         ALU_Immediate = {24'h000000, Address};
                         MuxASel = 2'b11; // Immediate to ALU A
-                        ALU_FunSel = 5'b00000; // Pass A
+                        ALU_FunSel = 5'b10000; // 32-bit pass A
                         ARF_RegSel = `ARF_IN_PC;
                         ARF_FunSel = 2'b10;
                         T_Reset = 1'b1;
