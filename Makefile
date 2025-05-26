@@ -86,9 +86,9 @@ cpu_system_factorial:
 	Register16bit.v \
 	Helper.v && unbuffer vvp ./out
 
-cpu_debug:
+cpu_target:
 	iverilog -o out \
-	debug.v \
+	target.v \
 	CPUSystem.v \
 	ArithmeticLogicUnitSystem.v \
 	ArithmeticLogicUnit.v \

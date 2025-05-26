@@ -778,9 +778,10 @@ module CPUSystem(
                     end
 
                     6'h1E: begin // LDAL @ T2
-                        // Load byte 0
+                        // Load address into AR, read byte 0
                         ALU_Immediate = {24'h000000, Address};
                         MuxASel = 2'b11;
+                        ALU_FunSel = 5'b00000;
                         ARF_FunSel = 2'b10;
                         ARF_RegSel = `ARF_IN_AR;
 
@@ -1058,7 +1059,7 @@ module CPUSystem(
                     end
 
                     6'h1E: begin // LDAL @ T3
-                        // Load byte 1, AR ← AR + 1
+                        // Increment AR only
                         ARF_OutCSel   = `ARF_OUT_AR;
                         MuxASel       = 2'b01;
                         MuxBSel       = 2'b11;
@@ -1066,12 +1067,6 @@ module CPUSystem(
                         ALU_FunSel    = 5'b10100;
                         ARF_RegSel    = `ARF_IN_AR;
                         ARF_FunSel    = 2'b10;
-
-                        ARF_OutDSel = `ARF_OUT_AR;
-                        Mem_CS      = 1'b0;
-                        Mem_WR      = 1'b0;
-                        DR_E        = 1'b1;
-                        DR_FunSel   = 2'b10; // shift into high byte
                     end
 
                     6'h1F: begin // LDAH @ T3
@@ -1282,13 +1277,12 @@ module CPUSystem(
                     end
 
                     6'h1E: begin // LDAL @ T4
-                        // Rx <- DR
-                        select_dst_reg({1'b1, RegSel}); // RSEL → Rx
-
-                        MuxASel    = 2'b10;      // DR to ALU A
-                        ALU_FunSel = 5'b00000;   // pass-through
-                        RF_FunSel  = 3'b010;     // write to Rx
-                        T_Reset    = 1'b1;
+                        // Read byte 1 from incremented AR
+                        ARF_OutDSel = `ARF_OUT_AR;
+                        Mem_CS      = 1'b0;
+                        Mem_WR      = 1'b0;
+                        DR_E        = 1'b1;
+                        DR_FunSel   = 2'b10; // shift into high byte
                     end
 
                     6'h1F: begin // LDAH @ T4
@@ -1543,11 +1537,20 @@ module CPUSystem(
                         MuxCSel     = 2'b10; // ALUOut[23:16]
                     end
 
+                    6'h1E: begin // LDAL @ T5
+                        // Transfer DR to destination register
+                        select_dst_reg({1'b1, RegSel}); // RSEL → Rx
+                        MuxASel    = 2'b10;      // DR to ALU A
+                        ALU_FunSel = 5'b00000;   // pass-through
+                        RF_FunSel  = 3'b010;     // write to Rx
+                        T_Reset    = 1'b1;
+                    end
+
                     default: T_Reset = 1'b1;
                 endcase
             end
 
-            12'b000001000000: begin // T6
+            12'b000010000000: begin // T6
                 case (Opcode)
                     6'h03: begin // POPL @ T6
                         // DR → Rx
@@ -1654,7 +1657,7 @@ module CPUSystem(
                 endcase
             end
 
-            12'b000010000000: begin // T7
+            12'b000100000000: begin // T7
                 case (Opcode)
                     6'h04: begin // PSHL @ T7
                         // SP - 1 -> SP
@@ -1692,7 +1695,7 @@ module CPUSystem(
                 endcase
             end
 
-            12'b000100000000: begin // T8
+            12'b001000000000: begin // T8
                 case (Opcode)
                     6'h05: begin // POPH @ T8
                         // SP + 1 -> SP
@@ -1723,7 +1726,7 @@ module CPUSystem(
                 endcase
             end
 
-            12'b001000000000: begin // T9
+            12'b010000000000: begin // T9
                 case (Opcode)
                     6'h05: begin // POPH @ T9
                         // DR <- M[SP] (byte 3)
@@ -1750,19 +1753,32 @@ module CPUSystem(
                 endcase
             end
 
-            12'b010000000000: begin // T10
-                case (Opcode)
-                    6'h05: begin // POPH @ T10
-                        // DR -> Rx
-                        select_dst_reg({1'b1, RegSel}); // assign RF_RegSel
-                        MuxASel     = 2'b10; // DR to ALU A
-                        ALU_FunSel  = 5'b00000; // Pass A
-                        RF_FunSel   = 3'b010; // Load
-                        T_Reset     = 1'b1;
-                    end
+            12'b000000000001: begin
+                if (~Reset) begin
+                    ALU_Immediate = 32'h00000000;
+                    MuxASel = 2'b11;        // Immediate (0) to ALU A
+                    ALU_FunSel = 5'b00000;  // Pass A
+                    ALU_WF = 1'b0;          // Don't write flags during reset
 
-                    default: T_Reset = 1'b1;
-                endcase
+                    // Clear all 32-bit registers
+                    RF_RegSel = 4'b1111;  // Enable all registers
+                    RF_ScrSel = 4'b1111;  // Enable all scratch registers
+                    RF_FunSel = 3'b010;   // Load function
+
+                    // Clear all 16-bit address registers (PC, AR)
+                    ARF_RegSel = 3'b101;  // Enable PC and AR
+                    ARF_FunSel = 2'b10;   // Load function
+
+                    // Clear DR by loading 0
+                    DR_E = 1'b1;
+                    DR_FunSel = 2'b01;    // Load zero-extended
+                end else begin
+                    // Fetch LSB
+                    ARF_OutDSel = 2'b00; // PC to address
+                    Mem_CS = 1'b0;
+                    IR_LH = 1'b0; // Load LSB
+                    IR_Write = 1'b1;
+                end
             end
 
             // Default: Reset T for safety
