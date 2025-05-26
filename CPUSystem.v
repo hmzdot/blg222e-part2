@@ -375,17 +375,14 @@ module CPUSystem(
                     end
 
                     6'h07: begin // CALL @ T2
-                        // PC[15:8] -> DR, write -> M[SP]
+                        // PC[7:0] -> DR, write -> M[SP] (Store PC low byte first)
                         ARF_OutCSel = `ARF_OUT_PC;
                         MuxASel = 2'b01; // PC → ALU A
                         ALU_FunSel = 5'b00000; // Pass A
-                        DR_E = 1'b1;
-                        DR_FunSel = 2'b10; // Load upper byte into DR
-
                         ARF_OutDSel = `ARF_OUT_SP;
                         Mem_CS = 1'b0;
                         Mem_WR = 1'b1;
-                        MuxCSel = 2'b01; // ALUOut[15:8]
+                        MuxCSel = 2'b00; // ALUOut[7:0] (PC Low)
                     end
 
                     6'h08: begin // RET @ T2
@@ -1198,17 +1195,14 @@ module CPUSystem(
                     end
 
                     6'h07: begin // CALL @ T4
-                        // PC[7:0] -> DR, write -> M[SP]
+                        // PC[15:8] -> DR, write -> M[SP] (Store PC high byte)
                         ARF_OutCSel = `ARF_OUT_PC;
                         MuxASel = 2'b01;
                         ALU_FunSel = 5'b00000;
-                        DR_E = 1'b1;
-                        DR_FunSel = 2'b01; // Zero-extend → load low byte
-
                         ARF_OutDSel = `ARF_OUT_SP;
                         Mem_CS = 1'b0;
                         Mem_WR = 1'b1;
-                        MuxCSel = 2'b00; // ALUOut[7:0]
+                        MuxCSel = 2'b01; // ALUOut[15:8] (PC High)
                     end
 
                     6'h08: begin // RET @ T4
