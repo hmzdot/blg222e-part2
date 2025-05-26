@@ -766,15 +766,19 @@ module CPUSystem(
                     end
 
                     6'h1D: begin // STAR @ T2
-                        // Write byte 0
+                        // Write byte 3 from SrcReg1[31:24]
                         select_src_reg(SrcReg1);
                         MuxASel = 2'b00;
-                        ALU_FunSel = 5'b00000;
-
+                        ALU_Immediate = 32'h00000000;
+                        ALU_FunSel = 5'b10000; // Pass A (32-bit)
                         ARF_OutDSel = `ARF_OUT_AR;
                         Mem_CS = 1'b0;
                         Mem_WR = 1'b1;
-                        MuxCSel = 2'b00; // ALUOut[7:0]
+                        MuxCSel = 2'b11; // ALUOut[31:24]
+                        
+                        // Override default T2 behavior
+                        ARF_RegSel = 3'b000;
+                        ARF_FunSel = 2'b00;
                     end
 
                     6'h1E: begin // LDAL @ T2
@@ -1040,22 +1044,9 @@ module CPUSystem(
                     end
 
                     6'h1D: begin // STAR @ T3
-                        // Write byte 1, AR <- AR + 1
-                        ARF_OutCSel = `ARF_OUT_AR;
-                        MuxASel = 2'b01;
-                        MuxBSel = 2'b11;
-                        ALU_Immediate = 32'd1;
-                        ALU_FunSel = 5'b10100; // ADD
+                        // Increment AR: AR + 1 (from 0008 to 0009)
                         ARF_RegSel = `ARF_IN_AR;
-                        ARF_FunSel = 2'b10;
-
-                        select_src_reg(SrcReg1);
-                        MuxASel = 2'b00;
-                        ALU_FunSel = 5'b00000;
-                        ARF_OutDSel = `ARF_OUT_AR;
-                        Mem_CS = 1'b0;
-                        Mem_WR = 1'b1;
-                        MuxCSel = 2'b01; // ALUOut[15:8]
+                        ARF_FunSel = 2'b01; // Increment
                     end
 
                     6'h1E: begin // LDAL @ T3
@@ -1258,22 +1249,18 @@ module CPUSystem(
                     end
 
                     6'h1D: begin // STAR @ T4
-                        // Write byte 2, AR <- AR + 1
-                        ARF_OutCSel   = `ARF_OUT_AR;
-                        MuxASel       = 2'b01;
-                        MuxBSel       = 2'b11;
-                        ALU_Immediate = 32'd1;
-                        ALU_FunSel    = 5'b10100;
-                        ARF_RegSel    = `ARF_IN_AR;
-                        ARF_FunSel    = 2'b10;
-
+                        // Write byte 2 from SrcReg1[23:16] at AR (0009)
                         select_src_reg(SrcReg1);
-                        MuxASel     = 2'b00;
-                        ALU_FunSel  = 5'b00000;
+                        ALU_Immediate = 32'h00000000;
+                        ALU_FunSel = 5'b10000; // Pass A (32-bit)
                         ARF_OutDSel = `ARF_OUT_AR;
-                        Mem_CS      = 1'b0;
-                        Mem_WR      = 1'b1;
-                        MuxCSel     = 2'b10; // ALUOut[23:16]
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b10; // ALUOut[23:16]
+                        
+                        // Increment AR: AR + 1 (from 0009 to 000A)
+                        ARF_RegSel = `ARF_IN_AR;
+                        ARF_FunSel = 2'b01; // Increment
                     end
 
                     6'h1E: begin // LDAL @ T4
@@ -1439,24 +1426,18 @@ module CPUSystem(
                     end
 
                     6'h1D: begin // STAR @ T5
-                        // Write byte 3, AR <- AR + 1
-                        ARF_OutCSel   = `ARF_OUT_AR;
-                        MuxASel       = 2'b01;
-                        MuxBSel       = 2'b11;
-                        ALU_Immediate = 32'd1;
-                        ALU_FunSel    = 5'b10100;
-                        ARF_RegSel    = `ARF_IN_AR;
-                        ARF_FunSel    = 2'b10;
-
+                        // Write byte 1 from SrcReg1[15:8] at AR (000A)
                         select_src_reg(SrcReg1);
-                        MuxASel     = 2'b00;
-                        ALU_FunSel  = 5'b00000;
+                        ALU_Immediate = 32'h00000000;
+                        ALU_FunSel = 5'b10000; // Pass A (32-bit)
                         ARF_OutDSel = `ARF_OUT_AR;
-                        Mem_CS      = 1'b0;
-                        Mem_WR      = 1'b1;
-                        MuxCSel     = 2'b11; // ALUOut[31:24]
-
-                        T_Reset = 1'b1;
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b01; // ALUOut[15:8]
+                        
+                        // Increment AR: AR + 1 (from 000A to 000B)
+                        ARF_RegSel = `ARF_IN_AR;
+                        ARF_FunSel = 2'b01; // Increment
                     end
 
                     6'h1F: begin // LDAH @ T5
@@ -1552,6 +1533,19 @@ module CPUSystem(
 
             12'b000001000000: begin // T6 (actual bit 6)
                 case (Opcode)
+                    6'h1D: begin // STAR @ T6
+                        // Write byte 0 from SrcReg1[7:0] at AR (000B)
+                        select_src_reg(SrcReg1);
+                        ALU_Immediate = 32'h00000000;
+                        ALU_FunSel = 5'b10000; // Pass A (32-bit)
+                        ARF_OutDSel = `ARF_OUT_AR;
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b00; // ALUOut[7:0]
+                        
+                        T_Reset = 1'b1;
+                    end
+
                     6'h1F: begin // LDAH @ T6
                         // Do nothing - just transition to T7
                     end
