@@ -1550,6 +1550,46 @@ module CPUSystem(
                 endcase
             end
 
+            12'b000001000000: begin // T6 (actual bit 6)
+                case (Opcode)
+                    6'h1F: begin // LDAH @ T6
+                        // Do nothing - just transition to T7
+                    end
+
+                    default: T_Reset = 1'b1;
+                endcase
+            end
+
+            12'b000010000000: begin // T7 (was incorrectly labeled T6)
+                case (Opcode)
+                    6'h1F: begin // LDAH @ T7
+                        // Read byte 3
+                        ARF_OutDSel = `ARF_OUT_AR;
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b10; // Shift in high byte
+                    end
+
+                    default: T_Reset = 1'b1;
+                endcase
+            end
+
+            12'b000100000000: begin // T8 (was incorrectly labeled T7)
+                case (Opcode)
+                    6'h1F: begin // LDAH @ T8
+                        // Transfer DR to destination register
+                        select_dst_reg({1'b1, RegSel});
+                        MuxASel = 2'b10;     // DR to ALU A
+                        ALU_FunSel = 5'b10000; // 32-bit Pass A
+                        RF_FunSel = 3'b010;   // Load
+                        T_Reset = 1'b1;
+                    end
+
+                    default: T_Reset = 1'b1;
+                endcase
+            end
+
             12'b000010000000: begin // T6
                 case (Opcode)
                     6'h03: begin // POPL @ T6
@@ -1633,7 +1673,7 @@ module CPUSystem(
 
                     6'h24: begin // STRIM @ T6
                         // Write byte 3
-                        ARF_OutCSel   = `ARF_OUT_AR;
+                        ARF_OutDSel   = `ARF_OUT_AR;
                         MuxASel       = 2'b01;
                         MuxBSel       = 2'b11;
                         ALU_Immediate = 32'd1;
@@ -1722,6 +1762,15 @@ module CPUSystem(
                         MuxCSel = 2'b00;
                     end
 
+                    6'h1F: begin // LDAH @ T8
+                        // Transfer DR to destination register
+                        select_dst_reg({1'b1, RegSel});
+                        MuxASel = 2'b10;     // DR to ALU A
+                        ALU_FunSel = 5'b00000; // Pass A
+                        RF_FunSel = 3'b010;   // Load
+                        T_Reset = 1'b1;
+                    end
+
                     default: T_Reset = 1'b1;
                 endcase
             end
@@ -1789,3 +1838,4 @@ module CPUSystem(
     end
 
 endmodule
+
