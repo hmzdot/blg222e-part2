@@ -383,6 +383,10 @@ module CPUSystem(
                         Mem_CS = 1'b0;
                         Mem_WR = 1'b1;
                         MuxCSel = 2'b00; // ALUOut[7:0] (PC Low)
+                        
+                        // Override default T2 behavior
+                        ARF_RegSel = 3'b000;
+                        ARF_FunSel = 2'b00;
                     end
 
                     6'h08: begin // RET @ T2
@@ -1527,59 +1531,6 @@ module CPUSystem(
 
             12'b000001000000: begin // T6 (actual bit 6)
                 case (Opcode)
-                    6'h1D: begin // STAR @ T6
-                        // Write byte 0 from SrcReg1[7:0] at AR (000B)
-                        select_src_reg(SrcReg1);
-                        ALU_Immediate = 32'h00000000;
-                        ALU_FunSel = 5'b10000; // Pass A (32-bit)
-                        ARF_OutDSel = `ARF_OUT_AR;
-                        Mem_CS = 1'b0;
-                        Mem_WR = 1'b1;
-                        MuxCSel = 2'b00; // ALUOut[7:0]
-                        
-                        T_Reset = 1'b1;
-                    end
-
-                    6'h1F: begin // LDAH @ T6
-                        // Do nothing - just transition to T7
-                    end
-
-                    default: T_Reset = 1'b1;
-                endcase
-            end
-
-            12'b000010000000: begin // T7 (was incorrectly labeled T6)
-                case (Opcode)
-                    6'h1F: begin // LDAH @ T7
-                        // Read byte 3
-                        ARF_OutDSel = `ARF_OUT_AR;
-                        Mem_CS = 1'b0;
-                        Mem_WR = 1'b0;
-                        DR_E = 1'b1;
-                        DR_FunSel = 2'b10; // Shift in high byte
-                    end
-
-                    default: T_Reset = 1'b1;
-                endcase
-            end
-
-            12'b000100000000: begin // T8 (was incorrectly labeled T7)
-                case (Opcode)
-                    6'h1F: begin // LDAH @ T8
-                        // Transfer DR to destination register
-                        select_dst_reg({1'b1, RegSel});
-                        MuxASel = 2'b10;     // DR to ALU A
-                        ALU_FunSel = 5'b10000; // 32-bit Pass A
-                        RF_FunSel = 3'b010;   // Load
-                        T_Reset = 1'b1;
-                    end
-
-                    default: T_Reset = 1'b1;
-                endcase
-            end
-
-            12'b000010000000: begin // T6
-                case (Opcode)
                     6'h03: begin // POPL @ T6
                         // DR → Rx
                         select_dst_reg({1'b1, RegSel}); // assign RF_RegSel 
@@ -1626,7 +1577,7 @@ module CPUSystem(
                         // PC <- VALUE
                         ALU_Immediate = {24'h000000, Address};
                         MuxASel = 2'b11; // Immediate to ALU A
-                        ALU_FunSel = 5'b10000; // 32-bit pass A
+                        ALU_FunSel = 5'b00000; // Pass A
                         ARF_RegSel = `ARF_IN_PC;
                         ARF_FunSel = 2'b10;
                         T_Reset = 1'b1;
@@ -1649,14 +1600,21 @@ module CPUSystem(
                         T_Reset = 1'b1;
                     end
 
-                    6'h1F: begin // LDAH @ T6
-                        // Rx <- DR
-                        select_dst_reg({1'b1, RegSel});
-
-                        MuxASel = 2'b10;     // DR to ALU A
-                        ALU_FunSel = 5'b00000;
-                        RF_FunSel = 3'b010;
+                    6'h1D: begin // STAR @ T6
+                        // Write byte 0 from SrcReg1[7:0] at AR (000B)
+                        select_src_reg(SrcReg1);
+                        ALU_Immediate = 32'h00000000;
+                        ALU_FunSel = 5'b10000; // Pass A (32-bit)
+                        ARF_OutDSel = `ARF_OUT_AR;
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b1;
+                        MuxCSel = 2'b00; // ALUOut[7:0]
+                        
                         T_Reset = 1'b1;
+                    end
+
+                    6'h1F: begin // LDAH @ T6
+                        // Do nothing - just transition to T7
                     end
 
                     6'h24: begin // STRIM @ T6
@@ -1685,7 +1643,7 @@ module CPUSystem(
                 endcase
             end
 
-            12'b000100000000: begin // T7
+            12'b000010000000: begin // T7
                 case (Opcode)
                     6'h04: begin // PSHL @ T7
                         // SP - 1 -> SP
@@ -1719,11 +1677,20 @@ module CPUSystem(
                         ARF_FunSel    = 2'b10;
                     end
 
+                    6'h1F: begin // LDAH @ T7
+                        // Read byte 3
+                        ARF_OutDSel = `ARF_OUT_AR;
+                        Mem_CS = 1'b0;
+                        Mem_WR = 1'b0;
+                        DR_E = 1'b1;
+                        DR_FunSel = 2'b10; // Shift in high byte
+                    end
+
                     default: T_Reset = 1'b1;
                 endcase
             end
 
-            12'b001000000000: begin // T8
+            12'b000100000000: begin // T8
                 case (Opcode)
                     6'h05: begin // POPH @ T8
                         // SP + 1 -> SP
@@ -1751,19 +1718,14 @@ module CPUSystem(
                     end
 
                     6'h1F: begin // LDAH @ T8
-                        // Transfer DR to destination register
-                        select_dst_reg({1'b1, RegSel});
-                        MuxASel = 2'b10;     // DR to ALU A
-                        ALU_FunSel = 5'b00000; // Pass A
-                        RF_FunSel = 3'b010;   // Load
-                        T_Reset = 1'b1;
+                        // Do nothing - just transition to T9
                     end
 
                     default: T_Reset = 1'b1;
                 endcase
             end
 
-            12'b010000000000: begin // T9
+            12'b001000000000: begin // T9
                 case (Opcode)
                     6'h05: begin // POPH @ T9
                         // DR <- M[SP] (byte 3)
@@ -1783,6 +1745,15 @@ module CPUSystem(
                         ALU_FunSel    = 5'b10110; // 32-bit sub
                         ARF_RegSel    = `ARF_IN_SP;
                         ARF_FunSel    = 2'b10;
+                        T_Reset = 1'b1;
+                    end
+
+                    6'h1F: begin // LDAH @ T9
+                        // Transfer DR to destination register
+                        select_dst_reg({1'b1, RegSel});
+                        MuxASel = 2'b10;     // DR to ALU A
+                        ALU_FunSel = 5'b10000; // Pass A (32-bit)
+                        RF_FunSel = 3'b010;   // Load
                         T_Reset = 1'b1;
                     end
 
